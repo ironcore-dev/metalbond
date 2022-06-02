@@ -3,7 +3,7 @@ module github.com/onmetal/metalbond
 go 1.18
 
 require (
-	github.com/alecthomas/kong v0.4.0
+	github.com/alecthomas/kong v0.5.0
 	github.com/google/addlicense v1.0.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/vishvananda/netlink v1.1.0
