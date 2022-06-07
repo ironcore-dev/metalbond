@@ -17,7 +17,6 @@ package metalbond
 import (
 	"fmt"
 	"net"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
@@ -28,7 +27,8 @@ const METALBOND_RT_PROTO netlink.RouteProtocol = 254
 type NetlinkClient struct {
 	config    NetlinkClientConfig
 	tunDevice netlink.Link
-	mtx       sync.Mutex
+
+	rt threadUnsafeRouteTable
 }
 
 type NetlinkClientConfig struct {
@@ -49,21 +49,45 @@ func NewNetlinkClient(config NetlinkClientConfig) (*NetlinkClient, error) {
 	return &NetlinkClient{
 		config:    config,
 		tunDevice: link,
+		rt:        newThreadUnsafeRouteTable(),
 	}, nil
 }
 
 func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
 
 	if c.config.IPv4Only && dest.IPVersion != IPV4 {
 		log.Infof("Received non-IPv4 route will not be installed in kernel route table (IPv4-only mode)")
 		return nil
 	}
 
+	err := c.rt.AddNextHop(vni, dest, hop)
+	if err != nil {
+		return fmt.Errorf("failed to add route for netlink client internal rt")
+	}
+
+	nxtHops := c.rt.GetNextHopsByDestination(vni, dest)
+
+	err = c.updateRoute(vni, dest, nxtHops)
+	if err != nil {
+		return fmt.Errorf("failed to update route")
+	}
+
+	return nil
+
+}
+
+func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) error {
+
+	err, _ := c.rt.RemoveNextHop(vni, dest, hop)
+	if err != nil {
+		return fmt.Errorf("failed to remove nxthop for netlink client internal rt")
+	}
+
+	nxtHops := c.rt.GetNextHopsByDestination(vni, dest)
+
 	table, exists := c.config.VNITableMap[vni]
 	if !exists {
-		return fmt.Errorf("No route table ID known for given VNI")
+		return fmt.Errorf("no route table ID known for given VNI")
 	}
 
 	_, dst, err := net.ParseCIDR(dest.Prefix.String())
@@ -71,29 +95,27 @@ func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
 		return fmt.Errorf("cannot parse destination prefix: %v", err)
 	}
 
-	encap := netlink.IP6tnlEncap{
-		Dst: net.ParseIP(hop.TargetAddress.String()),
-		Src: net.ParseIP("::"), // what source ip to put here? Metalbond object, m, does not contain this info yet.
-	}
+	if len(nxtHops) == 0 {
 
-	route := &netlink.Route{
-		LinkIndex: c.tunDevice.Attrs().Index,
-		Dst:       dst,
-		Encap:     &encap,
-		Table:     table,
-		Protocol:  METALBOND_RT_PROTO,
-	} // by default, the route is already installed into the kernel table without explicite specification
+		route := &netlink.Route{
+			Dst:   dst,
+			Table: table,
+		} // by default, the route is already installed into the kernel table without explicite specification
 
-	if err := netlink.RouteAdd(route); err != nil {
-		return fmt.Errorf("cannot add route to %s (table %d) to kernel: %v", dest, table, err)
+		if err := netlink.RouteDel(route); err != nil {
+			return fmt.Errorf("cannot remove route to %s (table %d) from kernel: %v", dest, table, err)
+		}
+	} else {
+		err := c.updateRoute(vni, dest, nxtHops)
+		if err != nil {
+			return fmt.Errorf("failed to update route")
+		}
 	}
 
 	return nil
 }
 
-func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) error {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
+func (c *NetlinkClient) updateRoute(vni VNI, dest Destination, nexthops []NextHop) error {
 
 	if c.config.IPv4Only && dest.IPVersion != IPV4 {
 		return nil
@@ -109,21 +131,31 @@ func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) erro
 		return fmt.Errorf("cannot parse destination prefix: %v", err)
 	}
 
-	encap := netlink.IP6tnlEncap{
-		Dst: net.ParseIP(hop.TargetAddress.String()),
-		Src: net.ParseIP("::"), // what source ip to put here? Metalbond object, m, does not contain this info yet.
+	var nextHopInfos []*netlink.NexthopInfo
+
+	for _, hop := range nexthops {
+
+		encap := netlink.IP6tnlEncap{
+			Dst: net.ParseIP(hop.TargetAddress.String()),
+			Src: net.ParseIP("::"),
+		}
+
+		nextHopInfos = append(nextHopInfos, &netlink.NexthopInfo{
+			LinkIndex: c.tunDevice.Attrs().Index,
+			Encap:     &encap,
+			// other fields value to be decided
+		})
 	}
 
 	route := &netlink.Route{
-		LinkIndex: c.tunDevice.Attrs().Index,
 		Dst:       dst,
-		Encap:     &encap,
+		MultiPath: nextHopInfos,
 		Table:     table,
 		Protocol:  METALBOND_RT_PROTO,
-	} // by default, the route is already installed into the kernel table without explicite specification
+	}
 
-	if err := netlink.RouteDel(route); err != nil {
-		return fmt.Errorf("cannot remove route to %s (table %d) from kernel: %v", dest, table, err)
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("cannot update route to %s (table %d) to kernel: %v", dest, table, err)
 	}
 
 	return nil
