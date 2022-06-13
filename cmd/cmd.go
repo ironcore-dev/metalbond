@@ -48,6 +48,8 @@ var CLI struct {
 		IPv4only      bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
 		Keepalive     uint32   `help:"Keepalive Interval"`
 		Http          string   `help:"HTTP Server listen address. e.g. [::]:4712"`
+		Type          string   `help:"Client type: dpdk or netlink"`
+		DPDKServer    string   `help:"dpdk(dp-service) gRPC server address, default is localhost:1337"`
 	} `cmd:"" help:"Run MetalBond Client"`
 }
 
@@ -105,7 +107,8 @@ func main() {
 		}
 
 		var client metalbond.Client
-		if len(CLI.Client.InstallRoutes) > 0 {
+
+		if CLI.Client.Type == "netlink" && len(CLI.Client.InstallRoutes) > 0 {
 			vnitablemap := map[metalbond.VNI]int{}
 			for _, mapping := range CLI.Client.InstallRoutes {
 				parts := strings.Split(mapping, "#")
@@ -135,6 +138,22 @@ func main() {
 			})
 			if err != nil {
 				log.Fatalf("Cannot create MetalBond Client: %v", err)
+			}
+		} else if CLI.Client.Type == "dpdk" {
+
+			log.Infof("Start a dpdk gRPC client")
+			var srvAddress string
+			if CLI.Client.DPDKServer != "" {
+				srvAddress = CLI.Client.DPDKServer
+			} else {
+				srvAddress = "localhost:1337"
+			}
+			client, err = metalbond.NewDPDKClient(metalbond.DPDKClientConfig{
+				DPDKServerAddress: srvAddress,
+				IPv4Only:          CLI.Client.IPv4only,
+			})
+			if err != nil {
+				log.Fatalf("Cannot create dpdk-based MetalBond Client: %v", err)
 			}
 		} else {
 			client = metalbond.NewDummyClient()
