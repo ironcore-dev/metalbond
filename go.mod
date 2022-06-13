@@ -3,7 +3,7 @@ module github.com/onmetal/metalbond
 go 1.18
 
 require (
-	github.com/alecthomas/kong v0.5.0
+	github.com/alecthomas/kong v0.6.0
 	github.com/google/addlicense v1.0.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/vishvananda/netlink v1.1.0
@@ -13,7 +13,6 @@ require (
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29 // indirect
 	golang.org/x/sys v0.0.0-20220517195934-5e4e11fc645e // indirect
