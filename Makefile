@@ -47,7 +47,7 @@ docker:
 	docker build -t onmetal/metalbond .
 
 deb:
-	docker run -it --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" golang:1.17-bullseye bash -c "cd /workdir && deb/make-deb.sh"
+	docker run -it --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
 
 unit-test:
 	go test -v
