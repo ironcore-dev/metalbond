@@ -160,6 +160,9 @@ func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error 
 	}
 
 	if remaining == 0 {
+		m.peerMtx.RLock()
+		defer m.peerMtx.RUnlock()
+
 		if err := m.distributeRouteToPeers(REMOVE, vni, dest, hop, nil); err != nil {
 			m.log().Errorf("could not distribute route to peers: %v", err)
 			return fmt.Errorf("failed to withdraw a route, for the reason: %v", err)
