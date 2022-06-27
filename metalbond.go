@@ -151,6 +151,21 @@ func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error 
 }
 
 func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error {
+
+	m.log().Infof("withdraw a route for VNI %d: %s via %s", vni, dest, hop)
+
+	err, remaining := m.myAnnouncements.RemoveNextHop(vni, dest, hop, nil)
+	if err != nil {
+		return fmt.Errorf("cannot remove route from the local announcement route table: %v", err)
+	}
+
+	if remaining == 0 {
+		if err := m.distributeRouteToPeers(REMOVE, vni, dest, hop, nil); err != nil {
+			m.log().Errorf("could not distribute route to peers: %v", err)
+			return fmt.Errorf("failed to withdraw a route, for the reason: %v", err)
+		}
+	}
+
 	return nil
 }
 
