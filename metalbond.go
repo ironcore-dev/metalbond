@@ -159,6 +159,9 @@ func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error 
 		return fmt.Errorf("cannot remove route from the local announcement route table: %v", err)
 	}
 
+	// TODO: Due to the internal complexity,
+	// the logic, regarding when/how nexthops or entire routes are removed from metalbond under the cases in which withdrawing or receiving deleting route messages,
+	// should be double-checked.
 	if remaining == 0 {
 		m.peerMtx.RLock()
 		defer m.peerMtx.RUnlock()
