@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=metalbond
-WorkingDirectory=/opt/metalbond
-ExecStart=/opt/metalbond/bin/metalbond server \
+WorkingDirectory=/usr/share/metalbond
+ExecStart=/usr/sbin/metalbond server \
     --listen [::]:4711 \
     --http [::1]:4712 \
     --keepalive 5

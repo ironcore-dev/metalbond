@@ -5,7 +5,7 @@ Before=metalbond-client.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/metalbond
+WorkingDirectory=/usr/share/metalbond
 ExecStart=ip link add overlay-tun type ip6tnl mode any external ttl 32
 ExecStart=ip link set mtu 1500 dev overlay-tun
 

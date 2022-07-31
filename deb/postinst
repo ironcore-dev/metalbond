@@ -6,4 +6,4 @@ if ! grep -q 254 "/etc/iproute2/rt_protos"; then
 fi
 fi
 
-chown -R metalbond:metalbond /opt/metalbond
+chown -R metalbond:metalbond /usr/share/metalbond

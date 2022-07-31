@@ -50,6 +50,8 @@ func serveJsonRouteTable(m *MetalBond, listen string) {
 	}
 }
 
+var METALBOND_VERSION string
+
 func (j *jsonServer) getJsonRoutes() (jsonRoutes, error) {
 	js := jsonRoutes{
 		MetalBondVersion: METALBOND_VERSION,

@@ -1,6 +1,10 @@
-name: Pull Request Code test
+name: Code Test
 
 on:
+  push:
+    branches:
+    - '*'
+
   pull_request_target:
     types: [ assigned, opened, synchronize, reopened ]
     paths-ignore:
@@ -18,4 +22,5 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: '1.18'
+      - run: make
       - run: make test

@@ -1,9 +1,23 @@
-METALBOND_VERSION := 0.1.6
+ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
+METALBOND_VERSION=$(shell git rev-parse --short HEAD)
+else
+METALBOND_VERSION=$(shell (git describe --exact-match --tags 2> /dev/null | cut -dv -f2))
+endif
+ARCHITECTURE=$(shell dpkg --print-architecture)
 
 all:
+	make $(ARCHITECTURE)
+	cp ./target/metalbond_$(ARCHITECTURE) ./target/metalbond
+
+amd64:
 	mkdir -p target
 	rm -rf target/html && cp -ra html target
-	cd cmd && go build -o ../target/metalbond
+	cd cmd && go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_amd64
+
+aarch64:
+	mkdir -p target
+	rm -rf target/html && cp -ra html target
+	cd cmd && env GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(GIT_COMMIT)" -o ../target/metalbond_aarch64
 
 run-server: all
 	cd target && ./metalbond server \
@@ -51,11 +65,9 @@ proto:
 clean:
 	rm -rf target
 
-docker:
-	docker build -t onmetal/metalbond .
-
 deb:
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=aarch64" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
 
 unit-test:
 	go test -v

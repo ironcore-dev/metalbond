@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/metalbond
-ExecStart=/opt/metalbond/bin/metalbond client \
+WorkingDirectory=/usr/share/metalbond
+ExecStart=/usr/sbin/metalbond client \
     --server [::1]:4711 \
     --keepalive 5 \
     --announce 123#2001:db8:dead:beef::/64#2001:db8::1 \

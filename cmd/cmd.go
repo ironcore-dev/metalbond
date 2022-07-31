@@ -52,7 +52,7 @@ var CLI struct {
 }
 
 func main() {
-	log.Infof("MetalBond v%s", metalbond.METALBOND_VERSION)
+	log.Infof("MetalBond %s", metalbond.METALBOND_VERSION)
 
 	go func() {
 		for {
