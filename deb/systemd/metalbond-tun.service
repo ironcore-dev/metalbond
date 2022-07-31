@@ -1,5 +1,5 @@
 [Unit]
-Description=MetalBond Client
+Description=MetalBond Tun Device Setup
 After=network.target
 Before=metalbond-client.service
 
