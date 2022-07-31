@@ -23,6 +23,6 @@ cp deb/preinst $tmp_dir/metalbond/DEBIAN/
 
 ( cd $tmp_dir && dpkg-deb --build metalbond )
 
-mv $tmp_dir/metalbond.deb target/metalbond_$METALBOND_VERSION-$ARCHITECTURE.deb
+mv $tmp_dir/metalbond.deb target/metalbond_$METALBOND_VERSION_$ARCHITECTURE.deb
 
 rm -rf $tmp_dir
