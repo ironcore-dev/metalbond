@@ -1,0 +1,62 @@
+name: upload to garden linux repo
+on:
+  workflow_call:
+jobs:
+  build:
+    runs-on: self-hosted
+    strategy:
+      matrix: [ amd64, arm64 ]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          repository: "https://gitlab.com/gardenlinux/gardenlinux-metalbond"
+          branch: "lfs-storage"
+
+      - name: Set Versions
+        uses: actions/github-script@v4
+        id: set_version
+        with:
+          script: |
+            const tag = context.ref.substring(10)
+            const no_v = tag.replace('v', '')
+            const dash_index = no_v.lastIndexOf('-')
+            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
+            core.setOutput('tag', tag)
+            core.setOutput('no-v', no_v)
+            core.setOutput('no-dash', no_dash)
+      
+      - uses: actions/download-artifact@v2
+        with:
+          name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}
+
+
+      - name: Add SSH key
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          mkdir -p /home/runner/.ssh
+          ssh-keyscan gitlab.com >> /home/runner/.ssh/known_hosts
+          echo "${{ secrets.GITLAB_DEPLOY_KEY}}" > /home/runner/.ssh/github_actions
+          chmod 600 /home/runner/.ssh/github_actions
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null   
+          ssh-add /home/runner/.ssh/github_actions
+
+      - name: upload to gitlab lfs-storage
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: | 
+          git add metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
+          git commit -am "GitHub: metalbond ${{ steps.set_version.outputs.no-v }} ${{ matrix.architecture }}"
+          git push origin master
+
+
+
+
+
+
+
+
+
+
+

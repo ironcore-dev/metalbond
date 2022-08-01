@@ -1,29 +1,19 @@
 name: Build and Release MetalBond
 on:
-  release:
-    types:
-      - published
-  push:
-    tags:
-    - 'v*'
+  workflow_call:
+    inputs:
+      version:
+        required: true
 jobs:
   build:
     runs-on: self-hosted
+    strategy:
+      matrix:
+        architecture: [ amd64, arm64 ]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-
-      - name: Build DEB Package
-        run: make deb
-        env:
-          METALBOND_VERSION: ${{ github.ref_name }}
-
-      - name: Get Release
-        id: get_release
-        uses: bruceadams/get-release@v1.2.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      
       - name: Set Versions
         uses: actions/github-script@v4
         id: set_version
@@ -37,25 +27,30 @@ jobs:
             core.setOutput('no-v', no_v)
             core.setOutput('no-dash', no_dash)
 
-      - name: Upload Release Asset
+      - name: Build DEB Package
+        run: make deb
+        env:
+          METALBOND_VERSION: ${{ github.ref_name }}
+
+      - name: Get Release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to GitHub Releases
         id: upload-release-asset-amd64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_amd64.deb
-          asset_name: metalbond_${{ steps.set_version.outputs.no-v }}_amd64.deb
+          asset_path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
+          asset_name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
           asset_content_type: application/x-deb
 
-      - name: Upload Release Asset
-        id: upload-release-asset-arm64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload for next actions job
+        uses: actions/upload-artifact@v2
         with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_arm64.deb
-          asset_name: metalbond_${{ steps.set_version.outputs.no-v }}_arm64.deb
-          asset_content_type: application/x-deb
-          
+          name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}
+          path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb

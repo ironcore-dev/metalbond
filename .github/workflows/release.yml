@@ -1,0 +1,19 @@
+name: release 
+on:
+  release:
+    types:
+      - published
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  build:
+    uses: ./.github/workflows/deb.yml
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  upload:
+    uses: ./.github/workflows/publish-gardenlinux-repo.yml
+    secrets:
+      GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
+
