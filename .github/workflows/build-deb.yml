@@ -18,7 +18,7 @@ jobs:
       - name: Build DEB Package
         run: make deb
         env:
-          METALBOND_VERSION: "v${{ inputs.version }}"
+          METALBOND_VERSION: "${{ inputs.version }}"
 
       - name: Upload for next actions job
         uses: actions/upload-artifact@v2

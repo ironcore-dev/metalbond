@@ -1,7 +1,7 @@
 ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
-METALBOND_VERSION=$(shell git rev-parse --short HEAD)
+METALBOND_VERSION?=$(shell git rev-parse --short HEAD)
 else
-METALBOND_VERSION=$(shell (git describe --exact-match --tags 2> /dev/null | cut -dv -f2))
+METALBOND_VERSION?=$(shell (git describe --exact-match --tags 2> /dev/null | cut -dv -f2))
 endif
 ARCHITECTURE=$(shell dpkg --print-architecture)
 
