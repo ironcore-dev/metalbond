@@ -37,6 +37,7 @@ jobs:
 
       - name: clone gitlab lfs-storage
         run: |
+          sudo chmod 600 ~/.ssh/gitlab_key
           eval `ssh-agent -s`
           ssh-add ~/.ssh/gitlab_key
           git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
