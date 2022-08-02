@@ -2,11 +2,24 @@ name: debug
 on:
   push:
 jobs:
+  set_version:
+    runs-on: self-hosted
+    steps:
+      - name: Set Versions
+        id: set_version
+        run: echo "::set-output name=no-v::0.2.0"
+    outputs:
+      version: ${{ steps.set_version.outputs.no-v }} 
   build_deb:
+    needs: set_version
     uses: ./.github/workflows/build-deb.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
   publish_gardenlinux_repo:
-    needs: build_deb
+    needs: [ set_version, build_deb ]
     uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
     secrets:
       GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
 

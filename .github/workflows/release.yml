@@ -8,14 +8,38 @@ on:
     - 'v*'
 
 jobs:
+  set_version:
+    runs_on: self-hosted
+    steps:
+      - name: Set Versions      
+        uses: actions/github-script@v4
+        id: set_version
+        with:
+          script: |
+            const tag = context.ref.substring(10)
+            const no_v = tag.replace('v', '')
+            const dash_index = no_v.lastIndexOf('-')
+            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
+            core.setOutput('tag', tag)
+            core.setOutput('no-v', no_v)
+            core.setOutput('no-dash', no_dash)
+    outputs:
+      version: ${{ steps.set_version.outputs.no-v }}
   build_deb:
+    needs: set_version
     uses: ./.github/workflows/build-deb.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
   publish_github:
-    needs: build_deb
+    needs: [ set_version, build_deb ]
     uses: ./.github/workflows/publish-to-github-releases.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
   publish_gardenlinux_repo:
-    needs: build_deb
+    needs: [ set_version, build_deb ]
     uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
     secrets:
       GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
 

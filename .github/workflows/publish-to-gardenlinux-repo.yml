@@ -1,6 +1,9 @@
 name: upload to garden linux repo
 on:
   workflow_call:
+    inputs:
+      version:
+        type: string
     secrets:
       GITLAB_DEPLOY_KEY:
 jobs:
@@ -10,23 +13,10 @@ jobs:
       matrix: 
         architecture: [ amd64, arm64 ]
     steps:
-      - name: Set Versions
-        uses: actions/github-script@v4
-        id: set_version
-        with:
-          script: |
-            const tag = context.ref.substring(10)
-            const no_v = tag.replace('v', '')
-            const dash_index = no_v.lastIndexOf('-')
-            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
-            core.setOutput('tag', tag)
-            core.setOutput('no-v', no_v)
-            core.setOutput('no-dash', no_dash)
       
       - uses: actions/download-artifact@v2
         with:
-          name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}
-
+          name: metalbond_${{ inputs.version }}_${{ matrix.architecture }}
 
       - name: Add SSH key
         env:
@@ -47,8 +37,8 @@ jobs:
         env:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: | 
-          git add metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
-          git commit -am "GitHub: metalbond ${{ steps.set_version.outputs.no-v }} ${{ matrix.architecture }}"
+          git add metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb
+          git commit -am "GitHub: metalbond ${{ inputs.version }} ${{ matrix.architecture }}"
           git push origin master
 
 
