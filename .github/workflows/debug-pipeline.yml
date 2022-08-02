@@ -22,4 +22,5 @@ jobs:
       version: ${{ needs.set_version.outputs.version }}
     secrets:
       GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
+      GITLAB_KNOWN_HOSTS: ${{ secrets.GITLAB_KNOWN_HOSTS }}
 
