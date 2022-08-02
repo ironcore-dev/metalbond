@@ -10,12 +10,6 @@ jobs:
       matrix: 
         architecture: [ amd64, arm64 ]
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          repository: "https://gitlab.com/gardenlinux/gardenlinux-metalbond"
-          branch: "lfs-storage"
-
       - name: Set Versions
         uses: actions/github-script@v4
         id: set_version
@@ -44,6 +38,10 @@ jobs:
           chmod 600 /home/runner/.ssh/github_actions
           ssh-agent -a $SSH_AUTH_SOCK > /dev/null   
           ssh-add /home/runner/.ssh/github_actions
+
+      - name: clone gitlab lfs-storage
+        run: |
+          git clone -b lfs-storage https://gitlab.com/gardenlinux/gardenlinux-metalbond
 
       - name: upload to gitlab lfs-storage
         env:
