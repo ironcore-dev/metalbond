@@ -1,17 +1,9 @@
-name: release 
+name: debug
 on:
-  release:
-    types:
-      - published
   push:
-    tags:
-    - 'v*'
-
 jobs:
   build_deb:
     uses: ./.github/workflows/build-deb.yml
-  publish_github:
-    uses: ./.github/workflows/publish-to-github-releases.yml
   publish_gardenlinux_repo:
     uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
     secrets:

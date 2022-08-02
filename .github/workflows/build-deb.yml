@@ -1,9 +1,6 @@
 name: Build debian package
 on:
   workflow_call:
-    inputs:
-      version:
-        required: true
 jobs:
   build:
     runs-on: self-hosted

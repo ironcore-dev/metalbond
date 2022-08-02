@@ -1,11 +1,14 @@
 name: upload to garden linux repo
 on:
   workflow_call:
+    secrets:
+      GITLAB_DEPLOY_KEY:
 jobs:
   build:
     runs-on: self-hosted
     strategy:
-      matrix: [ amd64, arm64 ]
+      matrix: 
+        architecture: [ amd64, arm64 ]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
