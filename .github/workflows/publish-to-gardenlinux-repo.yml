@@ -30,8 +30,10 @@ jobs:
           ssh-add /home/runner/.ssh/github_actions
 
       - name: clone gitlab lfs-storage
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.so
         run: |
-          git clone -b lfs-storage https://gitlab.com/gardenlinux/gardenlinux-metalbond
+          git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
 
       - name: upload to gitlab lfs-storage
         env:
