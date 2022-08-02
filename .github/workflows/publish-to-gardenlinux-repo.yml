@@ -38,12 +38,16 @@ jobs:
       - name: clone gitlab lfs-storage
         run: |
           sudo chmod 600 ~/.ssh/gitlab_key
+          git config --global user.email "contact@gardenlinux.io"
+          git config --global user.name "GitHub Actions"
           eval `ssh-agent -s`
           ssh-add ~/.ssh/gitlab_key
           git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
+          cd gardenlinux-metalbond
+          cp ../metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb .
           git add metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb
           git commit -am "GitHub: metalbond ${{ inputs.version }} ${{ matrix.architecture }}"
-          git push origin master
+          git push origin lfs-storage
 
 
 
