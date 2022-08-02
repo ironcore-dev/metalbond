@@ -14,19 +14,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-      
-      - name: Set Versions
-        uses: actions/github-script@v4
-        id: set_version
-        with:
-          script: |
-            const tag = context.ref.substring(10)
-            const no_v = tag.replace('v', '')
-            const dash_index = no_v.lastIndexOf('-')
-            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
-            core.setOutput('tag', tag)
-            core.setOutput('no-v', no_v)
-            core.setOutput('no-dash', no_dash)
 
       - name: Build DEB Package
         run: make deb
@@ -36,5 +23,6 @@ jobs:
       - name: Upload for next actions job
         uses: actions/upload-artifact@v2
         with:
-          name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}
-          path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
+          if-no-files-found: error
+          name: metalbond_${{ inputs.version }}_${{ matrix.architecture }}
+          path: ./target/metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb
