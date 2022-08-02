@@ -5,6 +5,7 @@ jobs:
   build_deb:
     uses: ./.github/workflows/build-deb.yml
   publish_gardenlinux_repo:
+    needs: build_deb
     uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
     secrets:
       GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
