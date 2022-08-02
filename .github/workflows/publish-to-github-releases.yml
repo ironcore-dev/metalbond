@@ -1,0 +1,48 @@
+on:
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+jobs:
+  build:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        architecture: [ amd64, arm64 ]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set Versions
+        uses: actions/github-script@v4
+        id: set_version
+        with:
+          script: |
+            const tag = context.ref.substring(10)
+            const no_v = tag.replace('v', '')
+            const dash_index = no_v.lastIndexOf('-')
+            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
+            core.setOutput('tag', tag)
+            core.setOutput('no-v', no_v)
+            core.setOutput('no-dash', no_dash)
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}
+
+      - name: Get Release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to GitHub Releases
+        id: upload-release-asset-amd64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: ./target/metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
+          asset_name: metalbond_${{ steps.set_version.outputs.no-v }}_${{ matrix.architecture }}.deb
+          asset_content_type: application/x-deb

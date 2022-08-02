@@ -8,12 +8,14 @@ on:
     - 'v*'
 
 jobs:
-  build:
-    uses: ./.github/workflows/deb.yml
+  build_deb:
+    uses: ./.github/workflows/build-deb.yml
+  publish_github:
+    uses: ./.github/workflows/publish-to-github-releases.yml
     secrets:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  upload:
-    uses: ./.github/workflows/publish-gardenlinux-repo.yml
+  publish_gardenlinux_repo:
+    uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
     secrets:
       GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
 
