@@ -34,7 +34,9 @@ jobs:
 
       - name: upload tarball to pristine-lfs
         run: |
-          sudo apt install pristine-lfs
+          echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free" | sudo tee -a /etc/apt/sources.list
+          sudo apt-get update -qy 
+          sudo apt-get install -qy --no-install-recommends pristine-lfs
           sudo chmod 600 ~/.ssh/gitlab_key
           git config --global user.email "contact@gardenlinux.io"
           git config --global user.name "GitHub Actions"
