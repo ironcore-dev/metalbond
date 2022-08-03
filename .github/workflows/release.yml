@@ -25,6 +25,11 @@ jobs:
             core.setOutput('no-dash', no_dash)
     outputs:
       version: ${{ steps.set_version.outputs.no-v }}
+  pack_source:
+    needs: set_version
+    uses: ./.github/workflows/pack-source.yml
+    with:
+      version: ${{ needs.set_version.outputs.version }}
   build_deb:
     needs: set_version
     uses: ./.github/workflows/build-deb.yml
@@ -36,7 +41,7 @@ jobs:
     with:
       version: ${{ needs.set_version.outputs.version }}
   publish_gardenlinux_repo:
-    needs: [ set_version, build_deb ]
+    needs: [ set_version, pack_source]
     uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
     with:
       version: ${{ needs.set_version.outputs.version }}

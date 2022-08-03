@@ -17,7 +17,7 @@ jobs:
       
       - uses: actions/download-artifact@v2
         with:
-          name: metalbond_${{ inputs.version }}_${{ matrix.architecture }}
+          name: metalbond_${{ inputs.version }}.tar
 
       - name: Add SSH key
         run: |
@@ -45,7 +45,8 @@ jobs:
           git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
           cd gardenlinux-metalbond
           git lfs install
-          cp ../metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb .
+          ls ..
+          cp ../metalbond-${{ inputs.version }}.tar.* .
           git add metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb
           git commit -am "GitHub: metalbond ${{ inputs.version }} ${{ matrix.architecture }}"
           git push origin lfs-storage

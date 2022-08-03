@@ -1,0 +1,25 @@
+name: Create source tarball
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Build DEB Package
+        run: make tarball
+        env:
+          METALBOND_VERSION: "${{ inputs.version }}"
+
+      - name: Upload for next actions job
+        uses: actions/upload-artifact@v2
+        with:
+          if-no-files-found: error
+          name: metalbond_${{ inputs.version }}.tarball
+          path: ../metalbond_${{ inputs.version }}.tar.gz
