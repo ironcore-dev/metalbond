@@ -21,8 +21,8 @@ arm64:
 
 tarball:
 	mkdir -p target/metalbond-$(METALBOND_VERSION)/
-	rsync -a . target/metalbond-$(METALBOND_VERSION)/ --exclude target/
-	tar --exclude=target -czf target/metalbond_$(METALBOND_VERSION).orig.tar.gz target/metalbond-$(METALBOND_VERSION)
+	rsync -a ./* target/metalbond-$(METALBOND_VERSION)/ --exclude target/
+	cd target && tar -czf metalbond_$(METALBOND_VERSION).orig.tar.gz metalbond-$(METALBOND_VERSION)
 	rm -rf target/metalbond-$(METALBOND_VERSION)/
 
 run-server: all
