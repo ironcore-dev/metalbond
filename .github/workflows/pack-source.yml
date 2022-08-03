@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Build DEB Package
+      - name: create tarball
         run: make tarball
         env:
           METALBOND_VERSION: "${{ inputs.version }}"
@@ -22,4 +22,4 @@ jobs:
         with:
           if-no-files-found: error
           name: metalbond_${{ inputs.version }}.tarball
-          path: ../metalbond_${{ inputs.version }}.tar.gz
+          path: ./target/metalbond_${{ inputs.version }}.tar.gz

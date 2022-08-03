@@ -17,7 +17,7 @@ jobs:
       
       - uses: actions/download-artifact@v2
         with:
-          name: metalbond_${{ inputs.version }}.tar
+          name: metalbond_${{ inputs.version }}.tarball
 
       - name: Add SSH key
         run: |
