@@ -34,7 +34,6 @@ jobs:
 
       - name: upload tarball to pristine-lfs
         run: |
-          echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free" | sudo tee -a /etc/apt/sources.list
           sudo apt-get update -qy 
           sudo apt-get install -qy --no-install-recommends pristine-lfs
           sudo chmod 600 ~/.ssh/gitlab_key
