@@ -19,6 +19,9 @@ arm64:
 	rm -rf target/html && cp -ra html target
 	cd cmd && env GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_arm64
 
+tarball:
+	tar -czf ../metalbond-$(METALBOND_VERSION).tar.gz .
+
 run-server: all
 	cd target && ./metalbond server \
 		--listen [::]:4711 \

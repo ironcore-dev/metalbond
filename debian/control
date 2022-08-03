@@ -1,0 +1,11 @@
+Source: metalbond
+Maintainer: Malte Janduda
+Section: net
+priority: optional
+Build-Depends: debhelper-compat (= 13)
+
+Package: metalbond
+Architecture: linux-any
+Depends: libc6 (>=2.31)
+Recommends: ethtool, iproute2
+Description: MetalBond Client and Server
