@@ -10,14 +10,11 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    strategy:
-      matrix: 
-        architecture: [ amd64, arm64 ]
     steps:
       
       - uses: actions/download-artifact@v2
         with:
-          name: metalbond_${{ inputs.version }}.tarball
+          name: metalbond-${{ inputs.version }}.tarball
 
       - name: Add SSH key
         run: |
@@ -47,8 +44,8 @@ jobs:
           git lfs install
           ls ..
           cp ../metalbond-${{ inputs.version }}.tar.* .
-          git add metalbond_${{ inputs.version }}_${{ matrix.architecture }}.deb
-          git commit -am "GitHub: metalbond ${{ inputs.version }} ${{ matrix.architecture }}"
+          git add metalbond-${{ inputs.version }}.tar.*
+          git commit -am "GitHub: metalbond sources for version ${{ inputs.version }}"
           git push origin lfs-storage
 
 
