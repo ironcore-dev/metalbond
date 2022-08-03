@@ -41,8 +41,8 @@ jobs:
           git config --global user.name "GitHub Actions"
           eval `ssh-agent -s`
           ssh-add ~/.ssh/gitlab_key
-          git clone git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
-          cd gardenlinux-metalbond
+          git clone git@gitlab.com:gardenlinux/gardenlinux-package-metalbond.git
+          cd gardenlinux-package-metalbond
           cp ../metalbond_${{ inputs.version }}.orig.tar.gz .
           pristine-lfs commit --force-overwrite metalbond_${{ inputs.version }}.orig.tar.gz
           git push origin pristine-lfs
