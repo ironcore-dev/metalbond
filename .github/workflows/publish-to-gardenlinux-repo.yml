@@ -43,8 +43,8 @@ jobs:
           ssh-add ~/.ssh/gitlab_key
           git clone git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
           cd gardenlinux-metalbond
-          cp ../metalbond-${{ inputs.version }}.orig.tar.gz .
-          pristine-lfs commit --force-overwrite metalbond-${{ inputs.version }}.orig.tar.gz
+          cp ../metalbond_${{ inputs.version }}.orig.tar.gz .
+          pristine-lfs commit --force-overwrite metalbond_${{ inputs.version }}.orig.tar.gz
           git push origin pristine-lfs
 
 

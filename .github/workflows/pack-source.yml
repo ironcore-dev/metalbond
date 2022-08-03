@@ -22,4 +22,4 @@ jobs:
         with:
           if-no-files-found: error
           name: metalbond-${{ inputs.version }}.tarball
-          path: ./target/metalbond-${{ inputs.version }}.orig.tar.gz
+          path: ./target/metalbond_${{ inputs.version }}.orig.tar.gz

@@ -21,7 +21,7 @@ arm64:
 
 tarball:
 	mkdir -p target
-	tar --exclude=target -czf target/metalbond-$(METALBOND_VERSION).orig.tar.gz .
+	tar --exclude=target -czf target/metalbond_$(METALBOND_VERSION).orig.tar.gz .
 
 run-server: all
 	cd target && ./metalbond server \
