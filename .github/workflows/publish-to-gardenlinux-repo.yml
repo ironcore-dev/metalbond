@@ -47,6 +47,8 @@ jobs:
           cd gardenlinux-package-metalbond
           cp ../metalbond_${{ inputs.version }}.orig.tar.gz .
           echo "### use pristine-lfs to upload"
+          ls
+          pwd
           pristine-lfs commit --force-overwrite metalbond_${{ inputs.version }}.orig.tar.gz
           git push origin pristine-lfs
 
