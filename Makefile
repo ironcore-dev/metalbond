@@ -20,8 +20,10 @@ arm64:
 	cd cmd && env GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_arm64
 
 tarball:
-	mkdir -p target
-	tar --exclude=target -czf target/metalbond_$(METALBOND_VERSION).orig.tar.gz .
+	mkdir -p target/metalbond-$(METALBOND_VERSION)/
+	rsync -a . target/metalbond-$(METALBOND_VERSION)/ --exclude target/
+	tar --exclude=target -czf target/metalbond_$(METALBOND_VERSION).orig.tar.gz target/metalbond-$(METALBOND_VERSION)
+	rm -rf target/metalbond-$(METALBOND_VERSION)/
 
 run-server: all
 	cd target && ./metalbond server \
