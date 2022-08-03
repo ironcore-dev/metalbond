@@ -32,20 +32,19 @@ jobs:
           IdentityFile ~/.ssh/gitlab_key
           EOF
 
-      - name: clone gitlab lfs-storage
+      - name: upload tarball to pristine-lfs
         run: |
+          sudo apt install pristine-lfs
           sudo chmod 600 ~/.ssh/gitlab_key
           git config --global user.email "contact@gardenlinux.io"
           git config --global user.name "GitHub Actions"
           eval `ssh-agent -s`
           ssh-add ~/.ssh/gitlab_key
-          git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
+          git clone git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
           cd gardenlinux-metalbond
-          ls ..
-          cp ../metalbond-${{ inputs.version }}.tar.* .
-          git add metalbond-${{ inputs.version }}.tar.*
-          git commit -am "GitHub: metalbond sources for version ${{ inputs.version }}"
-          git push origin lfs-storage
+          cp ../metalbond-${{ inputs.version }}.orig.tar.gz .
+          pristine-lfs commit --force-overwrite metalbond-${{ inputs.version }}.orig.tar.gz
+          git push origin pristine-lfs
 
 
 
