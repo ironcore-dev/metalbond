@@ -41,7 +41,6 @@ jobs:
           ssh-add ~/.ssh/gitlab_key
           git clone -b lfs-storage git@gitlab.com:gardenlinux/gardenlinux-metalbond.git
           cd gardenlinux-metalbond
-          git lfs install
           ls ..
           cp ../metalbond-${{ inputs.version }}.tar.* .
           git add metalbond-${{ inputs.version }}.tar.*
