@@ -1,3 +1,3 @@
-debian/systemd/* usr/share/metalbond/systemd-units/
-target/metalbond usr/sbin/metalbond
+debian/systemd/* usr/share/metalbond/systemd-units
+target/metalbond usr/sbin
 target/html usr/share/metalbond/
