@@ -76,8 +76,8 @@ clean:
 	rm -rf target
 
 deb:
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=arm64" golang:1.18-bullseye bash -c "cd /workdir && deb/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=arm64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
 
 unit-test:
 	go test -v

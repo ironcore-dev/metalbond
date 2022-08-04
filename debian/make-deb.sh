@@ -16,7 +16,7 @@ cp target/metalbond_$ARCHITECTURE $tmp_dir/metalbond/usr/sbin/metalbond
 cp -ra target/html $tmp_dir/metalbond/usr/share/metalbond/
 cp debian/systemd/* $tmp_dir/metalbond/usr/share/metalbond/systemd-units/
 
-cp debian/control $tmp_dir/metalbond/DEBIAN/
+cp debian/no-src.control.custom $tmp_dir/metalbond/DEBIAN/control
 sed -i "s/METALBOND_VERSION/$(echo $METALBOND_VERSION | cut -dv -f2)/" $tmp_dir/metalbond/DEBIAN/control
 sed -i "s/ARCHITECTURE/$(echo $ARCHITECTURE | cut -dv -f2)/" $tmp_dir/metalbond/DEBIAN/control
 cp debian/postinst $tmp_dir/metalbond/DEBIAN/
