@@ -1,8 +1,11 @@
-ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
-METALBOND_VERSION?=$(shell git rev-parse --short HEAD)
+ifneq ("$(wildcard ./version)","")
+	METALBOND_VERSION?=$(shell cat ./version)
+else ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
+	METALBOND_VERSION?=$(shell git rev-parse --short HEAD)
 else
-METALBOND_VERSION?=$(shell (git describe --exact-match --tags 2> /dev/null | cut -dv -f2))
+	METALBOND_VERSION?=$(shell (git describe --exact-match --tags 2> /dev/null | cut -dv -f2))
 endif
+
 ARCHITECTURE=$(shell dpkg --print-architecture)
 
 all:
@@ -20,8 +23,9 @@ arm64:
 	cd cmd && env GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_arm64
 
 tarball:
-	mkdir -p target/metalbond-$(METALBOND_VERSION)/
+	mkdir -p target
 	rsync -a ./* target/metalbond-$(METALBOND_VERSION)/ --exclude target/
+#	echo $(METALBOND_VERSION) > target/metalbond-$(METALBOND_VERSION)/version
 	cd target && tar -czf metalbond_$(METALBOND_VERSION).orig.tar.gz metalbond-$(METALBOND_VERSION)
 	rm -rf target/metalbond-$(METALBOND_VERSION)/
 
