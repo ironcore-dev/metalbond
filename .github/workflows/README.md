@@ -8,8 +8,9 @@ Runs only for releases and pushes to tags matching `v*`
 
 1. get version from git_ref 
 1. Build debian package
+1. Pack debian sources in tarball `make tarball`
 1. publish debian package to github releases
-1. publish debian package to gardenlinux repo
+1. publish debian source tarball to gardenlinux repo
     - triggers gitlab pipeline defined [here](https://gitlab.com/gardenlinux/gardenlinux-metalbond)
 
 For details see [release.yml](release.yml)
