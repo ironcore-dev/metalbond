@@ -154,3 +154,27 @@ func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, received
 
 	return nil
 }
+
+func (rt *routeTable) NextHopExists(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) bool {
+	rt.rwmtx.Lock()
+	defer rt.rwmtx.Unlock()
+
+	// TODO Performance: reused found map pointers
+	if _, exists := rt.routes[vni]; !exists {
+		rt.routes[vni] = make(map[Destination]map[NextHop]map[*metalBondPeer]bool)
+	}
+
+	if _, exists := rt.routes[vni][dest]; !exists {
+		rt.routes[vni][dest] = make(map[NextHop]map[*metalBondPeer]bool)
+	}
+
+	if _, exists := rt.routes[vni][dest][nh]; !exists {
+		rt.routes[vni][dest][nh] = make(map[*metalBondPeer]bool)
+	}
+
+	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; exists {
+		return true
+	}
+
+	return false
+}

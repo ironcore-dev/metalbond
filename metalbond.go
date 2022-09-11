@@ -131,9 +131,24 @@ func (m *MetalBond) Subscribe(vni VNI) error {
 	return nil
 }
 
+func (m *MetalBond) IsSubscribed(vni VNI) bool {
+	m.mtxMySubscriptions.Lock()
+	defer m.mtxMySubscriptions.Unlock()
+
+	if _, exists := m.mySubscriptions[vni]; exists {
+		return true
+	}
+
+	return false
+}
+
 func (m *MetalBond) Unsubscribe(vni VNI) error {
 	m.log().Errorf("Unsubscribe not implemented (VNI %d)", vni)
 	return nil
+}
+
+func (m *MetalBond) IsRouteAnnounced(vni VNI, dest Destination, hop NextHop) bool {
+	return m.myAnnouncements.NextHopExists(vni, dest, hop, nil)
 }
 
 func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error {
