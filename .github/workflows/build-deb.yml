@@ -21,7 +21,7 @@ jobs:
           METALBOND_VERSION: "${{ inputs.version }}"
 
       - name: Upload for next actions job
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           if-no-files-found: error
           name: metalbond_${{ inputs.version }}_${{ matrix.architecture }}
