@@ -42,7 +42,7 @@ var CLI struct {
 	Client struct {
 		Server        []string `help:"Server address. You may define multiple servers."`
 		Subscribe     []uint32 `help:"Subscribe to VNIs"`
-		Announce      []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1)"`
+		Announce      []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1#[STD|LB|NAT]#[FROM#TO]"`
 		Verbose       bool     `help:"Enable debug logging" short:"v"`
 		InstallRoutes []string `help:"install routes via netlink. VNI to route table mapping (e.g. 23#100 installs routes of VNI 23 to route table 100)"`
 		Tun           string   `help:"ip6tnl tun device name"`
@@ -163,8 +163,13 @@ func main() {
 
 		for _, announcement := range CLI.Client.Announce {
 			parts := strings.Split(announcement, "#")
-			if len(parts) != 3 {
-				log.Fatalf("malformed announcement: %s", announcement)
+			routeType := pb.NextHopType_STANDARD
+			if len(parts) != 4 && len(parts) != 3 && len(parts) != 6 {
+				log.Fatalf("malformed announcement: %s expected format vni#prefix#destHop[#routeType][#fromPort#toPort] routeType can be STD,LB or NAT", announcement)
+			}
+
+			if len(parts) > 3 {
+				routeType = pb.ConvertCmdLineStrToEnumValue(parts[3])
 			}
 
 			vni, err := strconv.ParseInt(parts[0], 10, 24)
@@ -197,7 +202,22 @@ func main() {
 			hop := metalbond.NextHop{
 				TargetAddress: hopIP,
 				TargetVNI:     0,
-				Type:          pb.NextHopType_STANDARD,
+				Type:          routeType,
+			}
+			if routeType == pb.NextHopType_NAT {
+				if len(parts) <= 4 {
+					log.Fatalf("malformed announcement for NAT: %s expected format vni#prefix#destHop[#routeType][#fromPort#toPort] routeType can be STD,LB or NAT", announcement)
+				}
+				from, err := strconv.ParseInt(parts[4], 10, 16)
+				if err != nil {
+					log.Fatalf("invalid NAT from: %s", parts[4])
+				}
+				to, err := strconv.ParseInt(parts[5], 10, 16)
+				if err != nil {
+					log.Fatalf("invalid NAT from: %s", parts[5])
+				}
+				hop.NATPortRangeFrom = uint16(from)
+				hop.NATPortRangeTo = uint16(to)
 			}
 
 			if err := m.AnnounceRoute(metalbond.VNI(vni), dest, hop); err != nil {

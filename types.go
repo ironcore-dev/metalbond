@@ -222,10 +222,11 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 
 	pbmsg.NextHop.TargetVNI = msg.NextHop.TargetVNI
 	pbmsg.NextHop.TargetAddress = msg.NextHop.TargetAddress.AsSlice()
+	pbmsg.NextHop.Type = msg.NextHop.Type
 
-	if msg.NextHop.Type != pb.NextHopType_STANDARD {
-		// TODO: Add NAT and LB Stuff
-		return nil, fmt.Errorf("NAT Update msg NOT IMPLEMENTED")
+	if pbmsg.NextHop.Type == pb.NextHopType_NAT {
+		pbmsg.NextHop.NatPortRangeFrom = uint32(msg.NextHop.NATPortRangeFrom)
+		pbmsg.NextHop.NatPortRangeTo = uint32(msg.NextHop.NATPortRangeTo)
 	}
 
 	msgBytes, err := proto.Marshal(&pbmsg)
