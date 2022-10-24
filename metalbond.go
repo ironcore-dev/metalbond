@@ -226,7 +226,8 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	// send route to all peers who have subscribed to this VNI - with few exceptions:
 	for p := range m.subscribers[vni] {
 		// don't send route back to the peer we got it from
-		if p == fromPeer {
+		// Except for the LB routes
+		if p == fromPeer && hop.Type != pb.NextHopType_LOADBALANCER_TARGET {
 			continue
 		}
 
