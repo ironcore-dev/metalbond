@@ -6,7 +6,6 @@ Workflows listening to GitHub events are listed below.
 
 Runs only for releases and pushes to tags matching `v*` 
 
-1. get version from git_ref 
 1. Build debian package
 1. Pack debian sources in tarball `make tarball`
 1. publish debian package to github releases
