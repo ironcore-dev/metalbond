@@ -24,9 +24,6 @@ jobs:
         with:
           name: metalbond_${{ inputs.version }}_${{ matrix.architecture }}
 
-      - name: debug
-        run: ls -R
-
       - name: Upload to GitHub Releases
         id: upload-release-asset
         uses: actions/upload-release-asset@v1
