@@ -114,12 +114,12 @@ func main() {
 					log.Fatalf("malformed VNI Table mapping: %s", mapping)
 				}
 
-				vni, err := strconv.ParseInt(parts[0], 10, 24)
+				vni, err := strconv.ParseUint(parts[0], 10, 24)
 				if err != nil {
 					log.Fatalf("cannot parse VNI: %s", parts[0])
 				}
 
-				table, err := strconv.ParseInt(parts[1], 10, 24)
+				table, err := strconv.ParseUint(parts[1], 10, 24)
 				if err != nil {
 					log.Fatalf("cannot parse table: %s", parts[1])
 				}
@@ -172,7 +172,7 @@ func main() {
 				routeType = pb.ConvertCmdLineStrToEnumValue(parts[3])
 			}
 
-			vni, err := strconv.ParseInt(parts[0], 10, 24)
+			vni, err := strconv.ParseUint(parts[0], 10, 24)
 			if err != nil {
 				log.Fatalf("invalid VNI: %s", parts[1])
 			}
