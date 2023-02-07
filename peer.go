@@ -89,6 +89,8 @@ func (p *metalBondPeer) GetState() ConnectionState {
 }
 
 func (p *metalBondPeer) Subscribe(vni VNI) error {
+	p.log().Debugf("Subscribe to vni %d", vni)
+
 	if p.direction == INCOMING {
 		return fmt.Errorf("Cannot subscribe on incoming connection")
 	}
@@ -104,12 +106,23 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 }
 
 func (p *metalBondPeer) Unsubscribe(vni VNI) error {
+	p.log().Debugf("Unsubscribe from vni %d", vni)
+
 	if p.direction == INCOMING {
 		return fmt.Errorf("Cannot unsubscribe on incoming connection")
 	}
 
 	msg := msgUnsubscribe{
 		VNI: vni,
+	}
+
+	for dest, nhs := range p.receivedRoutes.GetDestinationsByVNI(vni) {
+		for _, nh := range nhs {
+			err, _ := p.receivedRoutes.RemoveNextHop(vni, dest, nh, p)
+			if err != nil {
+				p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
+			}
+		}
 	}
 
 	return p.sendMessage(msg)
@@ -186,6 +199,8 @@ func (p *metalBondPeer) log() *logrus.Entry {
 }
 
 func (p *metalBondPeer) cleanup() {
+	p.log().Debugf("cleanup")
+
 	// unsubscribe from VNIs
 	for vni := range p.subscribedVNIs {
 		err := p.metalbond.Unsubscribe(vni)
@@ -195,7 +210,7 @@ func (p *metalBondPeer) cleanup() {
 	}
 
 	// remove received routes from this peer from metalbond database
-	p.log().Infof("Removing all received nexthops from peer %s", p)
+	p.log().Info("Removing all received nexthops from peer")
 	for _, vni := range p.receivedRoutes.GetVNIs() {
 		for dest, nhs := range p.receivedRoutes.GetDestinationsByVNI(vni) {
 			for _, nh := range nhs {
@@ -451,6 +466,7 @@ func (p *metalBondPeer) processRxKeepalive(msg msgKeepalive) {
 }
 
 func (p *metalBondPeer) processRxSubscribe(msg msgSubscribe) {
+	p.log().Debugf("processRxSubscribe %#v", msg)
 	p.subscribedVNIs[msg.VNI] = true
 	if err := p.metalbond.addSubscriber(p, msg.VNI); err != nil {
 		p.log().Errorf("Failed to add subscriber: %v", err)
@@ -458,9 +474,12 @@ func (p *metalBondPeer) processRxSubscribe(msg msgSubscribe) {
 }
 
 func (p *metalBondPeer) processRxUnsubscribe(msg msgUnsubscribe) {
+	p.log().Debugf("processRxUnsubscribe %#v", msg)
 	if err := p.metalbond.removeSubscriber(p, msg.VNI); err != nil {
 		p.log().Errorf("Failed to remove subscriber: %v", err)
 	}
+
+	delete(p.subscribedVNIs, msg.VNI)
 }
 
 func (p *metalBondPeer) processRxUpdate(msg msgUpdate) {
@@ -495,6 +514,7 @@ func (p *metalBondPeer) processRxUpdate(msg msgUpdate) {
 }
 
 func (p *metalBondPeer) Close() {
+	p.log().Debug("Close")
 	if p.GetState() != CLOSED {
 		p.setState(CLOSED)
 		p.shutdown <- true
@@ -504,7 +524,9 @@ func (p *metalBondPeer) Close() {
 }
 
 func (p *metalBondPeer) Reset() {
+	p.log().Debugf("Reset")
 	if p.GetState() == CLOSED {
+		p.log().Debug("State is closed")
 		return
 	}
 
@@ -574,7 +596,9 @@ func (p *metalBondPeer) keepaliveLoop() {
 }
 
 func (p *metalBondPeer) resetKeepaliveTimeout() {
-	p.keepaliveTimer.Reset(time.Duration(p.keepaliveInterval) * time.Second * 5 / 2)
+	if p.keepaliveTimer != nil {
+		p.keepaliveTimer.Reset(time.Duration(p.keepaliveInterval) * time.Second * 5 / 2)
+	}
 }
 
 func (p *metalBondPeer) sendMessage(msg message) error {

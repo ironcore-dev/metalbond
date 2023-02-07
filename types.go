@@ -183,7 +183,20 @@ type msgUnsubscribe struct {
 }
 
 func (msg msgUnsubscribe) Serialize() ([]byte, error) {
-	return nil, fmt.Errorf("NOT IMPLEMENTED")
+	pbmsg := pb.Subscription{
+		Vni: uint32(msg.VNI),
+	}
+
+	msgBytes, err := proto.Marshal(&pbmsg)
+	if err != nil {
+		return nil, fmt.Errorf("Could not marshal message: %v", err)
+	}
+
+	if len(msgBytes) > 1188 {
+		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+	}
+
+	return msgBytes, nil
 }
 
 type msgUpdate struct {

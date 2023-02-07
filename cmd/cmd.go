@@ -154,6 +154,10 @@ func main() {
 			}
 		}
 
+		//FIXME just a workaround to avoid subscribing on a not established connection
+		//@Malte any idea how to solve that or should we loop thru all peers and check if they are connected?
+		time.Sleep(10 * time.Second)
+
 		for _, subscription := range CLI.Client.Subscribe {
 			err := m.Subscribe(metalbond.VNI(subscription))
 			if err != nil {

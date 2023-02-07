@@ -96,11 +96,11 @@ func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, recei
 
 	// TODO Performance: reused found map pointers
 	if _, exists := rt.routes[vni]; !exists {
-		return fmt.Errorf("Nexthop does not exist"), 0
+		return fmt.Errorf("VNI does not exist"), 0
 	}
 
 	if _, exists := rt.routes[vni][dest]; !exists {
-		return fmt.Errorf("Nexthop does not exist"), 0
+		return fmt.Errorf("Destination does not exist"), 0
 	}
 
 	if _, exists := rt.routes[vni][dest][nh]; !exists {
@@ -108,7 +108,7 @@ func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, recei
 	}
 
 	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; !exists {
-		return fmt.Errorf("Nexthop does not exist"), 0
+		return fmt.Errorf("ReceivedFrom does not exist"), 0
 	}
 
 	delete(rt.routes[vni][dest][nh], receivedFrom)
