@@ -1,3 +1,6 @@
+# Image URL to use all building/pushing image targets
+IMG ?= metalbond:latest
+
 ifneq ("$(wildcard ./version)","")
 	METALBOND_VERSION?=$(shell cat ./version)
 else ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
@@ -74,6 +77,14 @@ proto:
 
 clean:
 	rm -rf target
+
+.PHONY: docker-build
+docker-build: ## Build docker image with the manager.
+	docker build -t ${IMG} .
+
+.PHONY: docker-push
+docker-push: ## Push docker image with the manager.
+	docker push ${IMG}
 
 deb:
 	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
