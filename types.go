@@ -46,6 +46,17 @@ type NextHop struct {
 	NATPortRangeTo   uint16
 }
 
+type RouteObjectWithAction struct {
+	Action UpdateAction
+	Dest   Destination
+	Hop    NextHop
+}
+
+type RouteObject struct {
+	Dest Destination
+	Hop  NextHop
+}
+
 func (h NextHop) String() string {
 	if h.TargetVNI != 0 {
 		return fmt.Sprintf("%s (VNI: %d)", h.TargetAddress.String(), h.TargetVNI)
@@ -123,38 +134,6 @@ type message interface {
 	Serialize() ([]byte, error)
 }
 
-type msgHello struct {
-	message
-	KeepaliveInterval uint32
-	IsServer          bool
-}
-
-func (m msgHello) Serialize() ([]byte, error) {
-	pbmsg := pb.Hello{
-		KeepaliveInterval: m.KeepaliveInterval,
-		IsServer:          m.IsServer,
-	}
-
-	msgBytes, err := proto.Marshal(&pbmsg)
-	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
-	}
-
-	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
-	}
-
-	return msgBytes, nil
-}
-
-type msgKeepalive struct {
-	message
-}
-
-func (msg msgKeepalive) Serialize() ([]byte, error) {
-	return []byte{}, nil
-}
-
 type msgSubscribe struct {
 	message
 	VNI VNI
@@ -167,11 +146,11 @@ func (msg msgSubscribe) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
@@ -206,7 +185,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case REMOVE:
 		pbmsg.Action = pb.Action_REMOVE
 	default:
-		return nil, fmt.Errorf("Invalid UPDATE action")
+		return nil, fmt.Errorf("invalid UPDATE action")
 	}
 
 	switch msg.Destination.IPVersion {
@@ -215,7 +194,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case IPV6:
 		pbmsg.Destination.IpVersion = pb.IPVersion_IPv6
 	default:
-		return nil, fmt.Errorf("Invalid Destination IP version")
+		return nil, fmt.Errorf("invalid Destination IP version")
 	}
 	pbmsg.Destination.Prefix = msg.Destination.Prefix.Addr().AsSlice()
 	pbmsg.Destination.PrefixLength = uint32(msg.Destination.Prefix.Bits())
@@ -231,94 +210,12 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
-}
-
-func deserializeHelloMsg(pktBytes []byte) (*msgHello, error) {
-	pbmsg := &pb.Hello{}
-	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
-	}
-
-	return &msgHello{
-		KeepaliveInterval: pbmsg.KeepaliveInterval,
-	}, nil
-}
-
-func deserializeSubscribeMsg(pktBytes []byte) (*msgSubscribe, error) {
-	pbmsg := &pb.Subscription{}
-	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
-	}
-
-	return &msgSubscribe{
-		VNI: VNI(pbmsg.Vni),
-	}, nil
-}
-
-func deserializeUnsubscribeMsg(pktBytes []byte) (*msgUnsubscribe, error) {
-	pbmsg := &pb.Subscription{}
-	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
-	}
-
-	return &msgUnsubscribe{
-		VNI: VNI(pbmsg.Vni),
-	}, nil
-}
-
-func deserializeUpdateMsg(pktBytes []byte) (*msgUpdate, error) {
-	pbmsg := &pb.Update{}
-	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
-	}
-
-	action := ADD
-	if pbmsg.Action == pb.Action_REMOVE {
-		action = REMOVE
-	}
-
-	if pbmsg.Destination == nil {
-		return nil, fmt.Errorf("Destination is nil")
-	}
-
-	ipversion := IPV6
-	if pbmsg.Destination.IpVersion == pb.IPVersion_IPv4 {
-		ipversion = IPV4
-	}
-
-	destIP, ok := netip.AddrFromSlice(pbmsg.Destination.Prefix)
-	if !ok {
-		return nil, fmt.Errorf("Invalid destination IP")
-	}
-	destination := Destination{
-		IPVersion: ipversion,
-		Prefix:    netip.PrefixFrom(destIP, int(pbmsg.Destination.PrefixLength)),
-	}
-
-	nhAddr, ok := netip.AddrFromSlice(pbmsg.NextHop.TargetAddress)
-	if !ok {
-		return nil, fmt.Errorf("Invalid nexthop IP")
-	}
-	nexthop := NextHop{
-		TargetAddress:    nhAddr,
-		TargetVNI:        pbmsg.NextHop.TargetVNI,
-		Type:             pbmsg.NextHop.Type,
-		NATPortRangeFrom: uint16(pbmsg.NextHop.NatPortRangeFrom),
-		NATPortRangeTo:   uint16(pbmsg.NextHop.NatPortRangeTo),
-	}
-
-	return &msgUpdate{
-		Action:      action,
-		VNI:         VNI(pbmsg.Vni),
-		Destination: destination,
-		NextHop:     nexthop,
-	}, nil
 }

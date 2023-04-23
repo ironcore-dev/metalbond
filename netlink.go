@@ -40,7 +40,7 @@ type NetlinkClientConfig struct {
 func NewNetlinkClient(config NetlinkClientConfig) (*NetlinkClient, error) {
 	link, err := netlink.LinkByName(config.LinkName)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot find tun device '%s': %v", config.LinkName, err)
+		return nil, fmt.Errorf("cannot find tun device '%s': %v", config.LinkName, err)
 	}
 
 	// TODO: Remove all routes from route tables defined in config.VNITableMap with Protocol = METALBOND_RT_PROTO
@@ -63,7 +63,7 @@ func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
 
 	table, exists := c.config.VNITableMap[vni]
 	if !exists {
-		return fmt.Errorf("No route table ID known for given VNI")
+		return fmt.Errorf("no route table ID known for given VNI")
 	}
 
 	_, dst, err := net.ParseCIDR(dest.Prefix.String())
@@ -101,7 +101,7 @@ func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) erro
 
 	table, exists := c.config.VNITableMap[vni]
 	if !exists {
-		return fmt.Errorf("No route table ID known for given VNI")
+		return fmt.Errorf("no route table ID known for given VNI")
 	}
 
 	_, dst, err := net.ParseCIDR(dest.Prefix.String())

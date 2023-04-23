@@ -15,8 +15,11 @@
 package metalbond
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/onmetal/metalbond/pb"
@@ -80,7 +83,7 @@ func (m *MetalBond) AddPeer(addr string) error {
 
 	m.log().Infof("Adding peer %s", addr)
 	if _, exists := m.peers[addr]; exists {
-		return fmt.Errorf("Peer already registered")
+		return fmt.Errorf("peer already registered")
 	}
 
 	m.peers[addr] = newMetalBondPeer(
@@ -118,7 +121,7 @@ func (m *MetalBond) Subscribe(vni VNI) error {
 	defer m.mtxMySubscriptions.Unlock()
 
 	if _, exists := m.mySubscriptions[vni]; exists {
-		return fmt.Errorf("Already subscribed to VNI %d", vni)
+		return fmt.Errorf("already subscribed to VNI %d", vni)
 	}
 
 	m.mySubscriptions[vni] = true
@@ -157,7 +160,7 @@ func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error 
 
 	err := m.myAnnouncements.AddNextHop(vni, dest, hop, nil)
 	if err != nil {
-		return fmt.Errorf("Cannot announce route: %v", err)
+		return fmt.Errorf("cannot announce route: %v", err)
 	}
 
 	if err := m.distributeRouteToPeers(ADD, vni, dest, hop, nil); err != nil {
@@ -200,53 +203,26 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	m.mtxSubscribers.RLock()
 	defer m.mtxSubscribers.RUnlock()
 
+	ctx := context.Background()
 	// if this node is the origin of the route (fromPeer == nil):
 	if fromPeer == nil {
 		for _, sp := range m.peers {
-			upd := msgUpdate{
-				Action:      action,
-				VNI:         vni,
-				Destination: dest,
-				NextHop:     hop,
-			}
 
-			err := sp.SendUpdate(upd)
+			jsonObj, err := json.Marshal(RouteObject{Dest: dest,
+				Hop: hop})
 			if err != nil {
-				m.log().WithField("peer", sp).Debugf("Could not send update to peer: %v", err)
+				return err
 			}
+
+			_, err = sp.redisClient.Publish(ctx, "vni/"+strconv.FormatUint(uint64(vni), 10), jsonObj).Result()
+			if err != nil {
+				fmt.Println("Error publishing message:", err)
+			} else {
+				fmt.Printf("Published message: %s\n", jsonObj)
+			}
+
 		}
 		return nil
-	}
-
-	// if no one has subscribed to this VNI, we don't need to distribute the route
-	if _, exists := m.subscribers[vni]; !exists {
-		return nil
-	}
-
-	// send route to all peers who have subscribed to this VNI - with few exceptions:
-	for p := range m.subscribers[vni] {
-		// don't send route back to the peer we got it from
-		// Except for the LB routes
-		if p == fromPeer && hop.Type != pb.NextHopType_LOADBALANCER_TARGET {
-			continue
-		}
-
-		// TODO: Server to server communication
-		if fromPeer.isServer && p.isServer {
-			continue
-		}
-
-		upd := msgUpdate{
-			Action:      action,
-			VNI:         vni,
-			Destination: dest,
-			NextHop:     hop,
-		}
-
-		err := p.SendUpdate(upd)
-		if err != nil {
-			m.log().WithField("peer", p).Debugf("Could not send update to peer: %v", err)
-		}
 	}
 
 	return nil
@@ -302,82 +278,24 @@ func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest D
 	return nil
 }
 
-// addSubscriber is called by metalBondPeer when an SUBSCRIBE message has been received from the peer.
-// Route updates belonging to the specified VNI will be sent to the peer afterwards.
-func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
-	m.log().Infof("addSubscriber(%s, %d)", peer, vni)
-	m.mtxSubscribers.Lock()
-
-	if _, exists := m.subscribers[vni]; !exists {
-		m.subscribers[vni] = make(map[*metalBondPeer]bool)
-	}
-
-	if _, exists := m.subscribers[vni][peer]; exists {
-		return fmt.Errorf("Peer is already subscribed!")
-	}
-
-	m.subscribers[vni][peer] = true
-	m.mtxSubscribers.Unlock()
-
-	m.log().Infof("Peer %s added Subscription to VNI %d", peer, vni)
-
-	// TODO: we're missing a read-lock on routeTable
-	for dest, hops := range m.routeTable.GetDestinationsByVNI(vni) {
-		for _, hop := range hops {
-			err := peer.SendUpdate(msgUpdate{
-				Action:      ADD,
-				VNI:         vni,
-				Destination: dest,
-				NextHop:     hop,
-			})
-			if err != nil {
-				m.log().Errorf("Could not send UPDATE to peer: %v", err)
-				peer.Reset()
-			}
-		}
-	}
-
-	return nil
-}
-
-// removeSubscriber is called by metalBondPeer when an UNSUBSCRIBE message has been received from the peer.
-func (m *MetalBond) removeSubscriber(peer *metalBondPeer, vni VNI) error {
-	return fmt.Errorf("NOT IMPLEMENTED")
-}
-
 // StartServer starts the MetalBond server asynchronously.
 // To stop the server again, call Shutdown().
 func (m *MetalBond) StartServer(listenAddress string) error {
-	lis, err := net.Listen("tcp", listenAddress)
-	m.lis = &lis
-	if err != nil {
-		return fmt.Errorf("Cannot open TCP port: %v", err)
-	}
 	m.isServer = true
 
-	m.log().Infof("Listening on %s", listenAddress)
+	m.log().Infof("Starting server-client on %s", listenAddress)
 
 	go func() {
-		for {
-			conn, err := lis.Accept()
-			if m.shuttingDown {
-				return
-			} else if err != nil {
-				m.log().Errorf("Error accepting incoming connection: %v", err)
-				return
-			}
-
-			p := newMetalBondPeer(
-				&conn,
-				conn.RemoteAddr().String(),
-				m.keepaliveInterval,
-				INCOMING,
-				m,
-			)
-			m.mtxPeers.Lock()
-			m.peers[conn.RemoteAddr().String()] = p
-			m.mtxPeers.Unlock()
-		}
+		p := newMetalBondPeer(
+			nil,
+			listenAddress,
+			m.keepaliveInterval,
+			INCOMING,
+			m,
+		)
+		m.mtxPeers.Lock()
+		m.peers[listenAddress] = p
+		m.mtxPeers.Unlock()
 	}()
 
 	return nil
