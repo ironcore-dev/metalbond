@@ -233,13 +233,13 @@ func (p *metalBondPeer) handle() {
 	p.wg.Add(1)
 	defer p.wg.Done()
 
-	p.txChan = make(chan []byte, 32768)
-	p.shutdown = make(chan bool, 10)
-	p.keepaliveStop = make(chan bool, 10)
-	p.rxHello = make(chan msgHello, 5)
-	p.rxKeepalive = make(chan msgKeepalive, 5)
-	p.rxSubscribe = make(chan msgSubscribe, 100)
-	p.rxUnsubscribe = make(chan msgUnsubscribe, 100)
+	p.txChan = make(chan []byte, 65536)
+	p.shutdown = make(chan bool, 100)
+	p.keepaliveStop = make(chan bool, 100)
+	p.rxHello = make(chan msgHello, 50)
+	p.rxKeepalive = make(chan msgKeepalive, 50)
+	p.rxSubscribe = make(chan msgSubscribe, 1000)
+	p.rxUnsubscribe = make(chan msgUnsubscribe, 1000)
 	p.rxUpdate = make(chan msgUpdate, 1000)
 
 	// outgoing connections still need to be established. pconn is nil.
@@ -603,7 +603,7 @@ func (p *metalBondPeer) resetKeepaliveTimeout() {
 }
 
 func (p *metalBondPeer) sendMessage(msg message) error {
-	p.log().Debugf("sendMessage")
+	p.log().Tracef("sendMessage")
 	if p.GetState() == CLOSED {
 		err := errors.New("State is closed")
 		p.log().Debug(err)

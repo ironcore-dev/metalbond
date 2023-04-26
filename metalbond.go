@@ -432,6 +432,7 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 				m,
 			)
 			m.mtxPeers.Lock()
+			m.log().Infof("New peer %s", conn.RemoteAddr().String())
 			m.peers[conn.RemoteAddr().String()] = p
 			m.mtxPeers.Unlock()
 		}

@@ -1,3 +1,7 @@
+# Image URL to use all building/pushing image targets
+IMG ?= controller:latest
+BUILDARGS ?=
+
 ifneq ("$(wildcard ./version)","")
 	METALBOND_VERSION?=$(shell cat ./version)
 else ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
@@ -14,7 +18,7 @@ all:
 
 amd64:
 	mkdir -p target
-	rm -rf target/html && cp -ra html target
+	rm -rf target/html && cp -a html target
 	cd cmd && go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_amd64
 
 arm64:
@@ -74,6 +78,14 @@ proto:
 
 clean:
 	rm -rf target
+
+.PHONY: docker-build
+docker-build: ## Build docker image with the manager.
+	docker build $(BUILDARGS) -t ${IMG} .
+
+.PHONY: docker-push
+docker-push: ## Push docker image with the manager.
+	docker push ${IMG}
 
 deb:
 	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
