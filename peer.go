@@ -15,6 +15,7 @@
 package metalbond
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -602,6 +603,13 @@ func (p *metalBondPeer) resetKeepaliveTimeout() {
 }
 
 func (p *metalBondPeer) sendMessage(msg message) error {
+	p.log().Debugf("sendMessage")
+	if p.GetState() == CLOSED {
+		err := errors.New("State is closed")
+		p.log().Debug(err)
+		return err
+	}
+
 	var msgType MESSAGE_TYPE
 	switch msg.(type) {
 	case msgHello:
