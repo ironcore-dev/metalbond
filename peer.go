@@ -533,6 +533,9 @@ func (p *metalBondPeer) Reset() {
 
 	switch p.direction {
 	case INCOMING:
+		// incoming connections are closed by the server
+		// in order to avoid stale peer threads
+		p.Close()
 		if err := p.metalbond.RemovePeer(p.remoteAddr); err != nil {
 			p.log().Errorf("Failed to remove peer: %v", err)
 		}
