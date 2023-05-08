@@ -16,11 +16,11 @@ package metalbond
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	log "github.com/sirupsen/logrus"
 )
 
 var _ = Describe("Peer", func() {
