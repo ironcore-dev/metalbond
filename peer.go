@@ -33,6 +33,7 @@ type metalBondPeer struct {
 	direction  ConnectionDirection
 	isServer   bool
 
+	mtxReset sync.RWMutex
 	mtxState sync.RWMutex
 	state    ConnectionState
 
@@ -234,8 +235,8 @@ func (p *metalBondPeer) handle() {
 	defer p.wg.Done()
 
 	p.txChan = make(chan []byte, 65536)
-	p.shutdown = make(chan bool, 100)
-	p.keepaliveStop = make(chan bool, 100)
+	p.shutdown = make(chan bool, 1)
+	p.keepaliveStop = make(chan bool, 1)
 	p.rxHello = make(chan msgHello, 50)
 	p.rxKeepalive = make(chan msgKeepalive, 50)
 	p.rxSubscribe = make(chan msgSubscribe, 1000)
@@ -526,6 +527,9 @@ func (p *metalBondPeer) Close() {
 
 func (p *metalBondPeer) Reset() {
 	p.log().Debugf("Reset")
+	p.mtxReset.RLock()
+	defer p.mtxReset.RUnlock()
+
 	if p.GetState() == CLOSED {
 		p.log().Debug("State is closed")
 		return
