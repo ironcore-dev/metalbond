@@ -15,6 +15,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -154,9 +155,25 @@ func main() {
 			}
 		}
 
-		//FIXME just a workaround to avoid subscribing on a not established connection
-		//@Malte any idea how to solve that or should we loop thru all peers and check if they are connected?
-		time.Sleep(10 * time.Second)
+		// Wait for all peers to connect
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			connected := true
+			for _, server := range CLI.Client.Server {
+				state, err := m.PeerState(server)
+				if err != nil || state != metalbond.ESTABLISHED {
+					connected = false
+					break
+				}
+			}
+			if connected {
+				break
+			}
+			if time.Now().After(deadline) {
+				panic(errors.New("timeout waiting to connect"))
+			}
+			time.Sleep(1 * time.Second)
+		}
 
 		for _, subscription := range CLI.Client.Subscribe {
 			err := m.Subscribe(metalbond.VNI(subscription))

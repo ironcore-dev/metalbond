@@ -113,6 +113,19 @@ func (m *MetalBond) unsafeRemovePeer(addr string) {
 	}
 }
 
+func (m *MetalBond) PeerState(addr string) (ConnectionState, error) {
+	m.mtxPeers.RLock()
+	defer m.mtxPeers.RUnlock()
+
+	m.log().Debugf("PeerState peer %s", addr)
+	if _, exists := m.peers[addr]; exists {
+		state := m.peers[addr].GetState()
+		return state, nil
+	} else {
+		return CLOSED, fmt.Errorf("Peer %s does not exist", addr)
+	}
+}
+
 func (m *MetalBond) Subscribe(vni VNI) error {
 	m.mtxMySubscriptions.Lock()
 	defer m.mtxMySubscriptions.Unlock()
