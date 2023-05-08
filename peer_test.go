@@ -1,217 +1,106 @@
+// Copyright 2023 OnMetal authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package metalbond
 
 import (
-	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-const (
-	serverAddress = "127.0.0.1:4711"
-)
+var _ = Describe("Peer", func() {
 
-func setup() (*MetalBond, *DummyClient, error) {
-	log.SetLevel(log.TraceLevel)
-	config := Config{}
-	client := NewDummyClient()
-	srv := NewMetalBond(config, client)
-	err := srv.StartServer(serverAddress)
-	if err != nil {
-		return nil, nil, err
-	}
+	var (
+		mbServer      *MetalBond
+		serverAddress string
+		client        *DummyClient
+	)
 
-	return srv, client, err
-}
-
-func cleanup(server *MetalBond) {
-	server.Shutdown()
-}
-func TestMetalBondPeerReset(t *testing.T) {
-
-	mbServer, client, err := setup()
-	if err != nil {
-		panic(fmt.Errorf("failed to setup mbServer: %v", err))
-	}
-	defer cleanup(mbServer)
-
-	mbClient := NewMetalBond(Config{}, client)
-	if err := mbClient.AddPeer(serverAddress); err != nil {
-		panic(fmt.Errorf("failed to add mbServer: %v", err))
-	}
-
-	// wait max 10 seconds for peer to connect
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Wait for the peer to connect
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peers %d", len(mbServer.peers))
-		if len(mbServer.peers) > 0 {
-			return true, nil
-		}
-		return false, nil
+	BeforeEach(func() {
+		log.Info("----- START -----")
+		config := Config{}
+		client = NewDummyClient()
+		mbServer = NewMetalBond(config, client)
+		serverAddress = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
+		err := mbServer.StartServer(serverAddress)
+		Expect(err).ToNot(HaveOccurred())
 	})
 
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
-
-	// get the first peer
-	var p *metalBondPeer
-	for _, peer := range mbServer.peers {
-		p = peer
-		break
-	}
-
-	// Wait for the peer to be established
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peer %s", p.GetState())
-		if p.GetState() == ESTABLISHED {
-			return true, nil
-		}
-		return false, nil
+	AfterEach(func() {
+		mbServer.Shutdown()
 	})
 
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
+	It("should reset", func() {
+		mbClient := NewMetalBond(Config{}, client)
+		err := mbClient.AddPeer(serverAddress)
+		Expect(err).NotTo(HaveOccurred())
 
-	// call multiple times to check if it panics
-	p.Reset()
-	p.Reset()
-	p.Reset()
+		Expect(waitForPeerState(mbServer, ESTABLISHED)).NotTo(BeFalse())
 
-	if err := mbClient.RemovePeer(serverAddress); err != nil {
-		panic(fmt.Errorf("failed to remove mbServer: %v", err))
-	}
-
-	// Wait for the peer to disconnect
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peers %d", len(mbServer.peers))
-		if len(mbServer.peers) == 0 {
-			return true, nil
+		var p *metalBondPeer
+		for _, peer := range mbServer.peers {
+			p = peer
+			break
 		}
-		return false, nil
+
+		// Reset the peer a few times
+		p.Reset()
+		p.Reset()
+		p.Reset()
+
+		// expect the peer state to be closed
+		Expect(p.GetState()).To(Equal(CLOSED))
+
+		// wait for the peer to be established again
+		Expect(waitForPeerState(mbServer, ESTABLISHED)).NotTo(BeFalse())
 	})
 
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer to disconnect")
-	}
+	It("should reconnect", func() {
+		mbClient := NewMetalBond(Config{}, client)
+		err := mbClient.AddPeer(serverAddress)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Check that the peer's state was updated as expected.
-	if p.GetState() != CLOSED {
-		t.Errorf("Unexpected state: expected CLOSED, got %s", p.GetState())
-	}
-}
+		Expect(waitForPeerState(mbServer, ESTABLISHED)).NotTo(BeFalse())
 
-func TestMetalBondPeerReconnect(t *testing.T) {
-	mbServer, client, err := setup()
-	if err != nil {
-		panic(fmt.Errorf("failed to setup mbServer: %v", err))
-	}
-	defer cleanup(mbServer)
-
-	mbClient := NewMetalBond(Config{}, client)
-	if err := mbClient.AddPeer(serverAddress); err != nil {
-		panic(fmt.Errorf("failed to add server: %v", err))
-	}
-
-	// wait max 10 seconds for peer to connect
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Wait for the peer to connect
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peers %d", len(mbServer.peers))
-		if len(mbServer.peers) > 0 {
-			return true, nil
+		var p *metalBondPeer
+		for _, peer := range mbServer.peers {
+			p = peer
+			break
 		}
-		return false, nil
+
+		// Close the peer
+		p.Close()
+
+		//
+		Expect(p.GetState()).To(Equal(CLOSED))
+
+		// wait for the peer to be established again
+		Expect(waitForPeerState(mbServer, ESTABLISHED)).NotTo(BeFalse())
 	})
+})
 
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
-
-	// get the first peer
-	var p *metalBondPeer
-	for _, peer := range mbServer.peers {
-		p = peer
-		break
-	}
-
-	// Wait for the peer to be established
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peer %s", p.GetState())
-		if p.GetState() == ESTABLISHED {
-			return true, nil
+func waitForPeerState(mbServer *MetalBond, expectedState ConnectionState) bool {
+	return Eventually(func() bool {
+		for _, peer := range mbServer.peers {
+			if peer.GetState() == expectedState {
+				return true
+			}
 		}
-		return false, nil
-	})
-
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
-
-	// reset peer
-	p.Reset()
-
-	// Wait for the peer to disconnect
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peers %d", len(mbServer.peers))
-		if len(mbServer.peers) == 0 {
-			return true, nil
-		}
-		return false, nil
-	})
-
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer to disconnect")
-	}
-
-	// Check that the peer's state was updated as expected.
-	if p.GetState() != CLOSED {
-		t.Errorf("Unexpected state: expected CLOSED, got %s", p.GetState())
-	}
-
-	// Wait for the peer to reconnect
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peers %d", len(mbServer.peers))
-		if len(mbServer.peers) > 0 {
-			return true, nil
-		}
-		return false, nil
-	})
-
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
-
-	for _, peer := range mbServer.peers {
-		p = peer
-		break
-	}
-
-	// Wait for the peer to be established
-	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
-		log.Infof("peer %s", p.GetState())
-		if p.GetState() == ESTABLISHED {
-			return true, nil
-		}
-		return false, nil
-	})
-
-	// Check if the wait was successful or if it timed out.
-	if err != nil {
-		t.Error("failed to wait for peer")
-	}
+		return false
+	}, 10*time.Second).Should(BeTrue(), fmt.Sprintf("expected peer state to be %s", expectedState))
 }
