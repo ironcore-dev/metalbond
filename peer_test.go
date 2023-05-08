@@ -195,4 +195,23 @@ func TestMetalBondPeerReconnect(t *testing.T) {
 	if err != nil {
 		t.Error("failed to wait for peer")
 	}
+
+	for _, peer := range mbServer.peers {
+		p = peer
+		break
+	}
+
+	// Wait for the peer to be established
+	err = PollImmediateWithContext(ctx, time.Second, func(ctx context.Context) (bool, error) {
+		log.Infof("peer %s", p.GetState())
+		if p.GetState() == ESTABLISHED {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	// Check if the wait was successful or if it timed out.
+	if err != nil {
+		t.Error("failed to wait for peer")
+	}
 }
