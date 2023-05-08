@@ -48,6 +48,7 @@ type metalBondPeer struct {
 	shutdown      chan bool
 	keepaliveStop chan bool
 	txChan        chan []byte
+	txChanClose   chan bool
 	rxHello       chan msgHello
 	rxKeepalive   chan msgKeepalive
 	rxSubscribe   chan msgSubscribe
@@ -235,8 +236,9 @@ func (p *metalBondPeer) handle() {
 	defer p.wg.Done()
 
 	p.txChan = make(chan []byte, 65536)
-	p.shutdown = make(chan bool, 1)
-	p.keepaliveStop = make(chan bool, 1)
+	p.shutdown = make(chan bool, 5)
+	p.keepaliveStop = make(chan bool, 5)
+	p.txChanClose = make(chan bool, 5)
 	p.rxHello = make(chan msgHello, 50)
 	p.rxKeepalive = make(chan msgKeepalive, 50)
 	p.rxSubscribe = make(chan msgSubscribe, 1000)
@@ -519,9 +521,9 @@ func (p *metalBondPeer) Close() {
 	p.log().Debug("Close")
 	if p.GetState() != CLOSED {
 		p.setState(CLOSED)
+		p.txChanClose <- true
 		p.shutdown <- true
 		p.keepaliveStop <- true
-		close(p.txChan)
 	}
 }
 
@@ -546,7 +548,7 @@ func (p *metalBondPeer) Reset() {
 	case OUTGOING:
 		p.log().Infof("Resetting connection...")
 		p.setState(RETRY)
-		close(p.txChan)
+		p.txChanClose <- true
 		p.shutdown <- true
 		p.keepaliveStop <- true
 		p.wg.Wait()
@@ -597,6 +599,7 @@ func (p *metalBondPeer) keepaliveLoop() {
 
 		// keepaliveStop chan delivers message to stop this routine
 		case <-p.keepaliveStop:
+			p.log().Tracef("Stopping keepaliveLoop")
 			p.keepaliveTimer.Stop()
 			return
 		}
@@ -656,18 +659,17 @@ func (p *metalBondPeer) txLoop() {
 	defer p.wg.Done()
 
 	for {
-		msg, more := <-p.txChan
-		if !more {
+		select {
+		case msg := <-p.txChan:
+			n, err := (*p.conn).Write(msg)
+			if n != len(msg) || err != nil {
+				p.log().Errorf("Could not transmit message completely: %v", err)
+				go p.Reset()
+			}
+		case <-p.txChanClose:
 			p.log().Debugf("Closing TCP connection")
 			(*p.conn).Close()
 			return
 		}
-
-		n, err := (*p.conn).Write(msg)
-		if n != len(msg) || err != nil {
-			p.log().Errorf("Could not transmit message completely: %v", err)
-			go p.Reset()
-		}
 	}
-
 }
