@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -25,11 +26,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var RETRY_INTERVAL = time.Duration(5 * time.Second)
+var RetryIntervalMin = 5
+var RetryIntervalMax = 5
 
 type metalBondPeer struct {
 	conn       *net.Conn
 	remoteAddr string
+	localIP    string
+	localAddr  string
 	direction  ConnectionDirection
 	isServer   bool
 
@@ -37,8 +41,9 @@ type metalBondPeer struct {
 	mtxState sync.RWMutex
 	state    ConnectionState
 
-	receivedRoutes routeTable
-	subscribedVNIs map[VNI]bool
+	receivedRoutes    routeTable
+	subscribedVNIs    map[VNI]bool
+	mtxSubscribedVNIs sync.RWMutex
 
 	metalbond *MetalBond
 
@@ -60,6 +65,7 @@ type metalBondPeer struct {
 func newMetalBondPeer(
 	pconn *net.Conn,
 	remoteAddr string,
+	localIP string,
 	keepaliveInterval uint32,
 	direction ConnectionDirection,
 	metalbond *MetalBond) *metalBondPeer {
@@ -67,6 +73,7 @@ func newMetalBondPeer(
 	peer := metalBondPeer{
 		conn:              pconn,
 		remoteAddr:        remoteAddr,
+		localIP:           localIP,
 		direction:         direction,
 		state:             CONNECTING,
 		receivedRoutes:    newRouteTable(),
@@ -185,7 +192,21 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 
 	// Connection lost
 	if oldState != newState && newState != ESTABLISHED {
+		subscribers := make(map[VNI]map[*metalBondPeer]bool)
+		p.metalbond.mtxSubscribers.RLock()
 		for vni, peers := range p.metalbond.subscribers {
+			for peer := range peers {
+				if p == peer {
+					if _, ok := subscribers[vni]; !ok {
+						subscribers[vni] = make(map[*metalBondPeer]bool)
+					}
+					subscribers[vni][p] = true
+				}
+			}
+		}
+		p.metalbond.mtxSubscribers.RUnlock()
+
+		for vni, peers := range subscribers {
 			for peer := range peers {
 				if p == peer {
 					if err := p.metalbond.removeSubscriber(p, vni); err != nil {
@@ -198,13 +219,16 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 }
 
 func (p *metalBondPeer) log() *logrus.Entry {
-	return logrus.WithField("peer", p.remoteAddr).WithField("state", p.GetState().String())
+	return logrus.WithField("peer", p.remoteAddr).WithField("state", p.GetState().String()).WithField("localAddr", p.localAddr)
 }
 
 func (p *metalBondPeer) cleanup() {
 	p.log().Debugf("cleanup")
 
 	// unsubscribe from VNIs
+	p.mtxSubscribedVNIs.RLock()
+	defer p.mtxSubscribedVNIs.RUnlock()
+
 	for vni := range p.subscribedVNIs {
 		err := p.metalbond.Unsubscribe(vni)
 		if err != nil {
@@ -239,11 +263,11 @@ func (p *metalBondPeer) handle() {
 	p.shutdown = make(chan bool, 5)
 	p.keepaliveStop = make(chan bool, 5)
 	p.txChanClose = make(chan bool, 5)
-	p.rxHello = make(chan msgHello, 50)
-	p.rxKeepalive = make(chan msgKeepalive, 50)
-	p.rxSubscribe = make(chan msgSubscribe, 1000)
-	p.rxUnsubscribe = make(chan msgUnsubscribe, 1000)
-	p.rxUpdate = make(chan msgUpdate, 1000)
+	p.rxHello = make(chan msgHello, 5)
+	p.rxKeepalive = make(chan msgKeepalive, 5)
+	p.rxSubscribe = make(chan msgSubscribe, 100)
+	p.rxUnsubscribe = make(chan msgUnsubscribe, 100)
+	p.rxUpdate = make(chan msgUpdate, 100)
 
 	// outgoing connections still need to be established. pconn is nil.
 	for p.conn == nil {
@@ -258,14 +282,34 @@ func (p *metalBondPeer) handle() {
 			// proceed
 		}
 
-		conn, err := net.Dial("tcp", p.remoteAddr)
+		var err error
+		localAddr := &net.TCPAddr{}
+		if p.localIP != "" {
+			localAddr, err = net.ResolveTCPAddr("tcp", p.localIP+":0")
+			if err != nil {
+				p.log().Errorf("Error resolving local address: %s", err)
+				return
+			}
+		}
+
+		remoteAddr, err := net.ResolveTCPAddr("tcp", p.remoteAddr)
 		if err != nil {
-			logrus.Infof("Cannot connect to server - %v - retry in %v", err, RETRY_INTERVAL)
-			time.Sleep(RETRY_INTERVAL)
+			p.log().Errorf("Error resolving remove address: %s", err)
+			return
+		}
+
+		tcpConn, err := net.DialTCP("tcp", localAddr, remoteAddr)
+		if err != nil {
+			retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
+			logrus.Infof("Cannot connect to server - %v - retry in %v", err, retry)
+			time.Sleep(retry)
 			continue
 		}
 
+		conn := net.Conn(tcpConn)
+		p.localAddr = conn.LocalAddr().String()
 		p.conn = &conn
+
 	}
 
 	go p.rxLoop()
@@ -471,6 +515,8 @@ func (p *metalBondPeer) processRxKeepalive(msg msgKeepalive) {
 
 func (p *metalBondPeer) processRxSubscribe(msg msgSubscribe) {
 	p.log().Debugf("processRxSubscribe %#v", msg)
+	p.mtxSubscribedVNIs.Lock()
+	defer p.mtxSubscribedVNIs.Unlock()
 	p.subscribedVNIs[msg.VNI] = true
 	if err := p.metalbond.addSubscriber(p, msg.VNI); err != nil {
 		p.log().Errorf("Failed to add subscriber: %v", err)
@@ -479,10 +525,15 @@ func (p *metalBondPeer) processRxSubscribe(msg msgSubscribe) {
 
 func (p *metalBondPeer) processRxUnsubscribe(msg msgUnsubscribe) {
 	p.log().Debugf("processRxUnsubscribe %#v", msg)
+	p.metalbond.mtxSubscribers.Lock()
+	defer p.metalbond.mtxSubscribers.Unlock()
+
 	if err := p.metalbond.removeSubscriber(p, msg.VNI); err != nil {
 		p.log().Errorf("Failed to remove subscriber: %v", err)
 	}
 
+	p.mtxSubscribedVNIs.RLock()
+	defer p.mtxSubscribedVNIs.RUnlock()
 	delete(p.subscribedVNIs, msg.VNI)
 }
 
@@ -554,9 +605,11 @@ func (p *metalBondPeer) Reset() {
 		p.wg.Wait()
 
 		p.conn = nil
-		p.log().Infof("Closed. Waiting %s...", RETRY_INTERVAL)
+		p.localAddr = ""
+		retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
+		p.log().Infof("Closed. Waiting %s...", retry)
 
-		time.Sleep(RETRY_INTERVAL)
+		time.Sleep(retry)
 		p.setState(CONNECTING)
 		p.log().Infof("Reconnecting...")
 

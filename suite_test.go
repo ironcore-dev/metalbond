@@ -30,7 +30,8 @@ func TestMetalbond(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	log.SetLevel(log.TraceLevel)
+	//log.SetLevel(log.TraceLevel)
+	log.SetLevel(log.InfoLevel)
 })
 
 func getRandomTCPPort() int {

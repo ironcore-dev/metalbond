@@ -150,7 +150,7 @@ func main() {
 		}
 
 		for _, server := range CLI.Client.Server {
-			if err := m.AddPeer(server); err != nil {
+			if err := m.AddPeer(server, ""); err != nil {
 				panic(fmt.Errorf("failed to add server: %v", err))
 			}
 		}

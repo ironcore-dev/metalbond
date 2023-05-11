@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/onmetal/metalbond/pb"
 	"github.com/sirupsen/logrus"
@@ -74,7 +75,7 @@ func (m *MetalBond) StartHTTPServer(listen string) error {
 	return nil
 }
 
-func (m *MetalBond) AddPeer(addr string) error {
+func (m *MetalBond) AddPeer(addr, localIP string) error {
 	m.mtxPeers.Lock()
 	defer m.mtxPeers.Unlock()
 
@@ -86,6 +87,7 @@ func (m *MetalBond) AddPeer(addr string) error {
 	m.peers[addr] = newMetalBondPeer(
 		nil,
 		addr,
+		localIP,
 		m.keepaliveInterval,
 		OUTGOING,
 		m)
@@ -101,7 +103,9 @@ func (m *MetalBond) RemovePeer(addr string) error {
 
 func (m *MetalBond) unsafeRemovePeer(addr string) {
 	m.log().Infof("Removing peer %s", addr)
+	m.mtxPeers.RLock()
 	p, exists := m.peers[addr]
+	m.mtxPeers.RUnlock()
 	if !exists {
 		m.log().Errorf("Peer %s does not exist", addr)
 	} else {
@@ -128,7 +132,10 @@ func (m *MetalBond) PeerState(addr string) (ConnectionState, error) {
 
 func (m *MetalBond) Subscribe(vni VNI) error {
 	m.mtxMySubscriptions.Lock()
-	defer m.mtxMySubscriptions.Unlock()
+	defer func() {
+		m.mtxMySubscriptions.Unlock()
+		time.Sleep(1 * time.Second)
+	}()
 
 	if _, exists := m.mySubscriptions[vni]; exists {
 		return fmt.Errorf("Already subscribed to VNI %d", vni)
@@ -384,10 +391,12 @@ func (m *MetalBond) removeSubscriber(peer *metalBondPeer, vni VNI) error {
 
 	m.mtxSubscribers.RLock()
 	if _, exists := m.subscribers[vni]; !exists {
+		m.mtxSubscribers.RUnlock()
 		return fmt.Errorf("Peer is not subscribed!")
 	}
 
 	if _, exists := m.subscribers[vni][peer]; !exists {
+		m.mtxSubscribers.RUnlock()
 		return fmt.Errorf("Peer is not subscribed!")
 	}
 	m.mtxSubscribers.RUnlock()
@@ -440,6 +449,7 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 			p := newMetalBondPeer(
 				&conn,
 				conn.RemoteAddr().String(),
+				"",
 				m.keepaliveInterval,
 				INCOMING,
 				m,
