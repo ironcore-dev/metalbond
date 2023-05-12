@@ -525,16 +525,13 @@ func (p *metalBondPeer) processRxSubscribe(msg msgSubscribe) {
 
 func (p *metalBondPeer) processRxUnsubscribe(msg msgUnsubscribe) {
 	p.log().Debugf("processRxUnsubscribe %#v", msg)
-	p.metalbond.mtxSubscribers.Lock()
-	defer p.metalbond.mtxSubscribers.Unlock()
-
 	if err := p.metalbond.removeSubscriber(p, msg.VNI); err != nil {
 		p.log().Errorf("Failed to remove subscriber: %v", err)
 	}
 
 	p.mtxSubscribedVNIs.RLock()
-	defer p.mtxSubscribedVNIs.RUnlock()
 	delete(p.subscribedVNIs, msg.VNI)
+	p.mtxSubscribedVNIs.RUnlock()
 }
 
 func (p *metalBondPeer) processRxUpdate(msg msgUpdate) {
