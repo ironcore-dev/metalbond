@@ -8,11 +8,11 @@ COPY .git .git
 COPY Makefile .
 COPY go.mod .
 COPY go.sum .
-COPY *.go .
+COPY *.go ./
 
 RUN make amd64
 
-FROM debian:bookworm-slim
+FROM debian:bullseye-slim
 
 RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/target/metalbond_amd64 /usr/sbin/metalbond
