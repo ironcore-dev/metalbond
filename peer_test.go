@@ -206,6 +206,7 @@ var _ = Describe("Peer", func() {
 
 				// Close the peer
 				err = p.metalbond.RemovePeer(p.remoteAddr)
+				Expect(err).NotTo(HaveOccurred())
 
 				// expect the peer state to be closed
 				Expect(p.GetState()).To(Equal(CLOSED))
