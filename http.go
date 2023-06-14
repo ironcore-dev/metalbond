@@ -63,9 +63,7 @@ func (j *jsonServer) getJsonRoutes() (jsonRoutes, error) {
 	for _, vni := range j.m.routeTable.GetVNIs() {
 		js.VNet[uint32(vni)] = make(map[Destination][]NextHop)
 		for dst, hops := range j.m.routeTable.GetDestinationsByVNI(vni) {
-			for _, hop := range hops {
-				js.VNet[uint32(vni)][dst] = append(js.VNet[uint32(vni)][dst], hop)
-			}
+			js.VNet[uint32(vni)][dst] = append(js.VNet[uint32(vni)][dst], hops...)
 		}
 	}
 
