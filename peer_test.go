@@ -170,6 +170,7 @@ var _ = Describe("Peer", func() {
 				p := mbServer.peers[clientAddr]
 				mbServer.mtxPeers.RUnlock()
 
+				Expect(waitForPeerState(mbClient, serverAddress, ESTABLISHED)).NotTo(BeFalse())
 				vni := VNI(index % 10)
 				err = mbClient.Subscribe(vni)
 				if err != nil {
