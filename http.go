@@ -67,13 +67,14 @@ func (j *jsonServer) getJsonRoutes() (jsonRoutes, error) {
 		}
 	}
 
-	for vi, _ := range js.VNet {
-		for _, hops := range js.VNet[vi] {
+	for _, vnets := range js.VNet {
+		for _, hops := range vnets {
 			sort.Slice(hops, func(i, j int) bool {
 				return hops[i].String() < hops[j].String()
 			})
 		}
 	}
+
 	return js, nil
 }
 
