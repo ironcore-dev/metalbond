@@ -94,6 +94,14 @@ git tag $TAG_NAME
 git push origin $TAG_NAME
 ```
 
+### :warning: GO Version :warning:
+The build artifacts for the github release and the build artifacts for the apt release are built separatly in different environments. 
+Garden Linux Team has regular security scans, and if a vulnerability in go is detected we update our go packages if possible.
+This means, we re-built the existing packages that depend on go with the fixed go version, and publish a new release 
+(e.g. by increasing 0.3.0-0gardenlinux1 to 0.3.0-0gardenlinux2). 
+
+
+
 License
 -------
 MetalBond is licensed under [Apache v2.0](LICENSE) - Copyright by the MetalBond authors.
