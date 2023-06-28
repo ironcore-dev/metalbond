@@ -65,6 +65,35 @@ Set the tunnel device using the `tun` parameter:
 
     ./metalbond client --install-routes 23#100 --tun overlay-tun
 
+Create a Release
+----------------
+
+### GitHub Release 
+
+The [release action](.github/workflows/release.yml) creates a new GitHub release, and is triggered by pushing a git tag starting with `v` to this repository.
+The release will contain the debian packages as build artifacts. 
+
+### gardenlinux.io apt repository release
+
+If you also want to publish metalbond to the gardenlinux.io apt repository, you need one additional step. 
+
+Create a git tag in the [gardenlinux package repo](https://gitlab.com/gardenlinux/gardenlinux-package-metalbond) for metalbond.
+The tag must follow the convention for Garden Linux package version tags. An Example:
+```
+gardenlinux/0.3.0-0gardenlinux1
+```
+
+You can create new tags either via the [gitlab web ui](https://gitlab.com/gardenlinux/gardenlinux-package-metalbond/-/tags), or manually by
+
+```
+git clone git@gitlab.com:gardenlinux/gardenlinux-package-metalbond.git
+cd gardenlinux-package-metalbond
+# Adapt the version
+TAG_NAME="gardenlinux/0.3.0-0gardenlinux1"
+git tag $TAG_NAME
+git push origin $TAG_NAME
+```
+
 License
 -------
 MetalBond is licensed under [Apache v2.0](LICENSE) - Copyright by the MetalBond authors.
