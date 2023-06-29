@@ -271,8 +271,8 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	// send route to all peers who have subscribed to this VNI - with few exceptions:
 	for p := range m.subscribers[vni] {
 		// don't send route back to the peer we got it from
-		// Except for the LB routes
-		if p == fromPeer && hop.Type != pb.NextHopType_LOADBALANCER_TARGET {
+		// Only for NAT routes
+		if p == fromPeer && hop.Type == pb.NextHopType_NAT {
 			continue
 		}
 
@@ -294,6 +294,19 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 		}
 	}
 
+	return nil
+}
+
+func (m *MetalBond) GetRoutesForVni(vni VNI) error {
+	for dest, hops := range m.routeTable.GetDestinationsByVNI(vni) {
+		for _, hop := range hops {
+			err := m.client.AddRoute(vni, dest, hop)
+			if err != nil {
+				m.log().Errorf("Client.AddRoute call failed in Refill: %v", err)
+				return err
+			}
+		}
+	}
 	return nil
 }
 
