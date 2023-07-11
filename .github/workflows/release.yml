@@ -3,9 +3,6 @@ on:
   release:
     types:
       - published
-  push:
-    tags:
-    - 'v*'
 
 jobs:
   set_version:
@@ -35,27 +32,8 @@ jobs:
     uses: ./.github/workflows/build-deb.yml
     with:
       version: ${{ needs.set_version.outputs.version }}
-  create_release:
-    needs: set_version
-    runs-on: self-hosted
-    steps:
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref }}
-          name: Release v${{ needs.set_version.outputs.version }}
-          draft: false
-          prerelease: false
   publish_github:
-    needs: [ set_version, create_release, build_deb ]
+    needs: [ set_version, build_deb ]
     uses: ./.github/workflows/publish-to-github-releases.yml
     with:
       version: ${{ needs.set_version.outputs.version }}
-#  publish_gardenlinux_repo:
-#    needs: [ set_version, pack_source]
-#    uses: ./.github/workflows/publish-to-gardenlinux-repo.yml
-#    with:
-#      version: ${{ needs.set_version.outputs.version }}
-#    secrets:
-#      GITLAB_DEPLOY_KEY: ${{ secrets.GITLAB_DEPLOY_KEY }}
-#      GITLAB_KNOWN_HOSTS: ${{ secrets.GITLAB_KNOWN_HOSTS }}
