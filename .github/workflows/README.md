@@ -2,15 +2,18 @@
 
 Workflows listening to GitHub events are listed below.
 
+## release-drafter
+
+Changes on master are detected, and added to the next draft release of metalbond.
+
+For details see [release-drafter.yml](release-drafter.yml)
+
 ## release
 
-Runs only for releases and pushes to tags matching `v*` 
-
-1. Build debian package
-1. Pack debian sources in tarball `make tarball`
-1. publish debian package to github releases
-1. publish debian source tarball to gardenlinux repo
-    - triggers gitlab pipeline defined [here](https://gitlab.com/gardenlinux/gardenlinux-metalbond)
+Automatically runs if you publish a release.
+You can publish a drafted release. 
+Once you publish a draft releases, this action is triggered automatically and builds the 
+debian packages, and attaches the build artifacts to the release. 
 
 For details see [release.yml](release.yml)
 
@@ -30,15 +33,9 @@ Runs for all pull requests
 For details see [golangci-lint.yml](golangci-lint.yml)
 
 
-## release-drafter
-
-Runs on pushes to master, and pull requests
-
-For details see [release-drafter.yml](release-drafter.yml)
-
 ## size-label
 
-Runs on pull reuests
+Runs on pull reuests, and labels the size of the PR. 
 
 For details see [size-label.yml](size-label.yml)
 
