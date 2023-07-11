@@ -21,12 +21,12 @@ all:
 amd64:
 	mkdir -p target
 	rm -rf target/html && cp -a html target
-	cd cmd && go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_amd64
+	cd cmd && go build -buildvcs=false -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_amd64
 
 arm64:
 	mkdir -p target
 	rm -rf target/html && cp -ra html target
-	cd cmd && env GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_arm64
+	cd cmd && env GOOS=linux GOARCH=arm64 go build -buildvcs=false -ldflags "-X github.com/onmetal/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)" -o ../target/metalbond_arm64
 
 tarball:
 	mkdir -p target

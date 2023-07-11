@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+set -ex
 tmp_dir=$(mktemp -d)
 
 echo "Creating MetalBond Debian Package v$METALBOND_VERSION..."
