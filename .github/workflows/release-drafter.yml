@@ -9,7 +9,7 @@ on:
 
 jobs:
   update_release_draft:
-    runs-on: ubuntu
+    runs-on: ubuntu-latest
     steps:
       - uses: release-drafter/release-drafter@v5
         id: draft-release
