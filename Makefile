@@ -2,6 +2,8 @@
 IMG ?= controller:latest
 BUILDARGS ?=
 
+DEB_BUILD_CONTAINER ?= golang:1.20-bookworm
+
 ifneq ("$(wildcard ./version)","")
 	METALBOND_VERSION?=$(shell cat ./version)
 else ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
@@ -88,8 +90,8 @@ docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
 
 deb:
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=arm64" golang:1.18-bullseye bash -c "cd /workdir && debian/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" $(DEB_BUILD_CONTAINER)  bash -c "cd /workdir && debian/make-deb.sh"
+	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=arm64" $(DEB_BUILD_CONTAINER)  bash -c "cd /workdir && debian/make-deb.sh"
 
 unit-test:
 	go test -v
