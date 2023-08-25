@@ -64,6 +64,33 @@ func (rt *routeTable) GetDestinationsByVNI(vni VNI) map[Destination][]NextHop {
 	return ret
 }
 
+func (rt *routeTable) GetDestinationsByVNIWithPeer(vni VNI) map[Destination]map[NextHop][]*metalBondPeer {
+	rt.rwmtx.RLock()
+	defer rt.rwmtx.RUnlock()
+
+	ret := make(map[Destination]map[NextHop][]*metalBondPeer)
+
+	if _, exists := rt.routes[vni]; !exists {
+		return ret
+	}
+
+	for dest, nhm := range rt.routes[vni] {
+		if ret[dest] == nil {
+			ret[dest] = make(map[NextHop][]*metalBondPeer)
+		}
+
+		for nh, peersMap := range nhm {
+			peers := []*metalBondPeer{}
+			for peer := range peersMap {
+				peers = append(peers, peer)
+			}
+			ret[dest][nh] = peers
+		}
+	}
+
+	return ret
+}
+
 func (rt *routeTable) GetNextHopsByDestination(vni VNI, dest Destination) []NextHop {
 	rt.rwmtx.RLock()
 	defer rt.rwmtx.RUnlock()

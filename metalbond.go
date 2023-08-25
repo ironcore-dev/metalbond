@@ -380,17 +380,23 @@ func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
 	m.log().Infof("Peer %s added Subscription to VNI %d", peer, vni)
 
 	// TODO: we're missing a read-lock on routeTable
-	for dest, hops := range m.routeTable.GetDestinationsByVNI(vni) {
-		for _, hop := range hops {
-			err := peer.SendUpdate(msgUpdate{
-				Action:      ADD,
-				VNI:         vni,
-				Destination: dest,
-				NextHop:     hop,
-			})
-			if err != nil {
-				m.log().Errorf("Could not send UPDATE to peer: %v", err)
-				peer.Reset()
+	for dest, hopToPeersMap := range m.routeTable.GetDestinationsByVNIWithPeer(vni) {
+		for hop, peers := range hopToPeersMap {
+			for _, peerFromList := range peers {
+				// Dont send the NAT routes back to the original peer which announced it
+				if peerFromList == peer && hop.Type == pb.NextHopType_NAT {
+					continue
+				}
+				err := peer.SendUpdate(msgUpdate{
+					Action:      ADD,
+					VNI:         vni,
+					Destination: dest,
+					NextHop:     hop,
+				})
+				if err != nil {
+					m.log().Errorf("Could not send UPDATE to peer: %v", err)
+					peer.Reset()
+				}
 			}
 		}
 	}
