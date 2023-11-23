@@ -40,8 +40,7 @@ type MetalBond struct {
 
 	keepaliveInterval uint32
 	shuttingDown      bool
-
-	client Client
+	client            Client
 
 	lis      *net.Listener // for server only
 	isServer bool
@@ -308,6 +307,18 @@ func (m *MetalBond) GetRoutesForVni(vni VNI) error {
 		}
 	}
 	return nil
+}
+
+func (m *MetalBond) GetSubscribedVnis() []VNI {
+	m.mtxMySubscriptions.RLock()
+	defer m.mtxMySubscriptions.RUnlock()
+
+	vnis := make([]VNI, 0)
+	for vni := range m.mySubscriptions {
+		vnis = append(vnis, vni)
+	}
+
+	return vnis
 }
 
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
