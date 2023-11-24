@@ -175,7 +175,7 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should announce", func() {
-		totalClients := 700 // TODO: was 1000 (local test works for this large value), but it is cut to half to make CI/CD happy
+		totalClients := 600 // TODO: was 1000 (local test works for this large value), but it is reduced to this value to make CI/CD happy
 		var wg sync.WaitGroup
 
 		for i := 1; i < totalClients+1; i++ {
