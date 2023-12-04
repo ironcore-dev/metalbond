@@ -3,7 +3,7 @@ on:
   push:
 jobs:
   set_version:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Set Versions
         id: set_version

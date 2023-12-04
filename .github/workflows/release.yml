@@ -6,7 +6,7 @@ on:
 
 jobs:
   set_version:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Set Versions      
         uses: actions/github-script@v6

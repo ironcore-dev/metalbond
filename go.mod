@@ -1,4 +1,4 @@
-module github.com/onmetal/metalbond
+module github.com/ironcore-dev/metalbond
 
 go 1.18
 
