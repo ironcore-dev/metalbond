@@ -1,8 +1,11 @@
-MetalBond
-=========
+# MetalBond
 
-MetalBond Protocol v1
----------------------
+[![REUSE status](https://api.reuse.software/badge/github.com/ironcore-dev/metalbond)](https://api.reuse.software/info/github.com/ironcore-dev/metalbond)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ironcore-dev/metalbond)](https://goreportcard.com/report/github.com/ironcore-dev/metalbond)
+[![GitHub License](https://img.shields.io/static/v1?label=License&message=Apache-2.0&color=blue)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
+
+## MetalBond Protocol v1
 
 ### Packet Format
 
@@ -53,8 +56,8 @@ The metalbond protocol relies on IPv6 transport. Therefore we assume a minimum M
 
 #### UPDATE Message
 
-Install Routes
---------------
+## Install Routes
+
 To install routes on a Linux system, you first need to create an IP-in-IPv6 tunnel endpoint:
 
     ip link add overlay-tun type ip6tnl mode any external
@@ -65,6 +68,6 @@ Set the tunnel device using the `tun` parameter:
 
     ./metalbond client --install-routes 23#100 --tun overlay-tun
 
-License
--------
-MetalBond is licensed under [Apache v2.0](LICENSE) - Copyright by the MetalBond authors.
+## License
+
+MetalBond is licensed under [Apache v2.0](LICENSE) - Copyright by the IronCore authors.

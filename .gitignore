@@ -9,3 +9,4 @@ debian/debhelper-build-stamp
 debian/files
 debian/metalbond.substvars
 debian/metalbond/
+bin/
