@@ -112,8 +112,9 @@ type message interface {
 	Serialize() ([]byte, error)
 }
 
+var _ message = (*msgHello)(nil)
+
 type msgHello struct {
-	message
 	KeepaliveInterval uint32
 	IsServer          bool
 }
@@ -136,16 +137,18 @@ func (m msgHello) Serialize() ([]byte, error) {
 	return msgBytes, nil
 }
 
+var _ message = (*msgKeepalive)(nil)
+
 type msgKeepalive struct {
-	message
 }
 
 func (msg msgKeepalive) Serialize() ([]byte, error) {
 	return []byte{}, nil
 }
 
+var _ message = (*msgSubscribe)(nil)
+
 type msgSubscribe struct {
-	message
 	VNI VNI
 }
 
@@ -166,8 +169,9 @@ func (msg msgSubscribe) Serialize() ([]byte, error) {
 	return msgBytes, nil
 }
 
+var _ message = (*msgUnsubscribe)(nil)
+
 type msgUnsubscribe struct {
-	message
 	VNI VNI
 }
 
@@ -188,8 +192,9 @@ func (msg msgUnsubscribe) Serialize() ([]byte, error) {
 	return msgBytes, nil
 }
 
+var _ message = (*msgUpdate)(nil)
+
 type msgUpdate struct {
-	message
 	Action      UpdateAction
 	VNI         VNI
 	Destination Destination
