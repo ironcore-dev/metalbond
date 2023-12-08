@@ -3,7 +3,7 @@ module github.com/ironcore-dev/metalbond
 go 1.18
 
 require (
-	github.com/alecthomas/kong v0.7.0
+	github.com/alecthomas/kong v0.8.1
 	github.com/google/addlicense v1.1.1
 	github.com/onsi/ginkgo/v2 v2.9.4
 	github.com/onsi/gomega v1.27.6
