@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.30.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/vishvananda/netlink v1.1.0
-	google.golang.org/protobuf v1.29.1
+	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
