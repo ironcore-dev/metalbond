@@ -25,7 +25,8 @@ License: Apache-2.0
 # documentation
 
 Files:
-  README.md
+  docs/*
+  *README.md
 Copyright: 2023 SAP SE or an SAP affiliate company and IronCore contributors
 License: Apache-2.0
 
