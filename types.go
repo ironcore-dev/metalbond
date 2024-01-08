@@ -4,6 +4,7 @@
 package metalbond
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"net/netip"
@@ -21,6 +22,16 @@ type VNI uint32
 type Destination struct {
 	IPVersion IPVersion
 	Prefix    netip.Prefix
+}
+
+func (d Destination) MarshalText() (text []byte, err error) {
+	type x Destination
+	return json.Marshal(x(d))
+}
+
+func (d *Destination) UnmarshalText(text []byte) error {
+	type x Destination
+	return json.Unmarshal(text, (*x)(d))
 }
 
 func (d Destination) String() string {
