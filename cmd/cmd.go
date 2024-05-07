@@ -86,6 +86,7 @@ func main() {
 		log.Infof("Client")
 		log.Infof("  servers: %v", CLI.Client.Server)
 		var err error
+		var serverCount = 0
 
 		if CLI.Client.Verbose {
 			log.SetLevel(log.DebugLevel)
@@ -139,6 +140,10 @@ func main() {
 		}
 
 		for _, server := range CLI.Client.Server {
+			serverCount++
+			if serverCount == 3 {
+				panic(fmt.Errorf("can not connect to more than 2 servers"))
+			}
 			if err := m.AddPeer(server, ""); err != nil {
 				panic(fmt.Errorf("failed to add server: %v", err))
 			}
