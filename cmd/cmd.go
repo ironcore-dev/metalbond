@@ -43,7 +43,10 @@ var CLI struct {
 }
 
 func main() {
-	log.Infof("MetalBond %s", metalbond.METALBOND_VERSION)
+	if metalbond.METALBOND_VERSION == "" {
+		metalbond.METALBOND_VERSION = "development" // Fallback for when version is not set
+	}
+	log.Infof("MetalBond Version: %s", metalbond.METALBOND_VERSION)
 
 	go func() {
 		for {
