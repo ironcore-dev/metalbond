@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and IronCore contributors
-// SPDX-License-Identifier: Apache-2.0
-
 package metalbond
 
 import (
@@ -23,20 +20,20 @@ var _ = Describe("Peer", func() {
 		mbServer2      *MetalBond
 		serverAddress1 string
 		serverAddress2 string
-		client         *DummyClient
+		dummyClient    *DummyClient
 	)
 
 	BeforeEach(func() {
 		log.Info("----- START -----")
 		config := Config{}
-		client = NewDummyClient()
+		dummyClient = NewDummyClient()
 
-		mbServer1 = NewMetalBond(config, client)
+		mbServer1 = NewMetalBond(config, dummyClient)
 		serverAddress1 = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
 		err := mbServer1.StartServer(serverAddress1)
 		Expect(err).ToNot(HaveOccurred())
 
-		mbServer2 = NewMetalBond(config, client)
+		mbServer2 = NewMetalBond(config, dummyClient)
 		serverAddress2 = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
 		err = mbServer2.StartServer(serverAddress2)
 		Expect(err).ToNot(HaveOccurred())
@@ -48,7 +45,7 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should subscribe", func() {
-		mbClient := NewMetalBond(Config{}, client)
+		mbClient := NewMetalBond(Config{}, dummyClient)
 		localIP := net.ParseIP("127.0.0.2")
 		err := mbClient.AddPeer(serverAddress1, localIP.String())
 		Expect(err).NotTo(HaveOccurred())
@@ -56,9 +53,6 @@ var _ = Describe("Peer", func() {
 		time.Sleep(5 * time.Second)
 		vni := VNI(200)
 		err = mbClient.Subscribe(vni)
-		if err != nil {
-			log.Errorf("subscribe failed: %v", err)
-		}
 		Expect(err).NotTo(HaveOccurred())
 
 		vnis := mbClient.GetSubscribedVnis()
@@ -78,7 +72,7 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should reset", func() {
-		mbClient := NewMetalBond(Config{}, client)
+		mbClient := NewMetalBond(Config{}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -86,6 +80,9 @@ var _ = Describe("Peer", func() {
 		Expect(clientAddr).NotTo(Equal(""))
 
 		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		state, err := mbServer1.PeerState(clientAddr)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(state).To(Equal(ESTABLISHED))
 
 		var p *metalBondPeer
 		for _, peer := range mbServer1.peers {
@@ -109,7 +106,7 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should reconnect", func() {
-		mbClient := NewMetalBond(Config{}, client)
+		mbClient := NewMetalBond(Config{}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -137,8 +134,8 @@ var _ = Describe("Peer", func() {
 		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
 	})
 
-	It("client timeout", func() {
-		mbClient := NewMetalBond(Config{}, client)
+	It("dummyClient timeout", func() {
+		mbClient := NewMetalBond(Config{}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -172,15 +169,105 @@ var _ = Describe("Peer", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
+	It("should cleanup announcements on unsubscribe", func() {
+		mbClient := NewMetalBond(Config{}, dummyClient)
+		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")
+		Expect(err).NotTo(HaveOccurred())
+
+		clientAddr := getLocalAddr(mbClient, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+
+		vni := VNI(200)
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		// prepare the route
+		startIP := net.ParseIP("100.64.0.0")
+		ip := incrementIPv4(startIP, 1)
+		addr, err := netip.ParseAddr(ip.String())
+		Expect(err).NotTo(HaveOccurred())
+		underlayRoute, err := netip.ParseAddr(fmt.Sprintf("b198:5b10:3880:fd32:fb80:80dd:46f7:%d", 1))
+		Expect(err).NotTo(HaveOccurred())
+		dest := Destination{
+			Prefix:    netip.PrefixFrom(addr, 32),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: underlayRoute,
+		}
+
+		err = mbClient.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(mbClient.IsRouteAnnounced(vni, dest, nextHop)).To(BeTrue())
+
+		// wait for the route to be received
+		time.Sleep(3 * time.Second)
+
+		myAnnouncements := mbClient.GetAnnouncementsForVni(vni)
+		Expect(len(myAnnouncements)).To(Equal(1))
+
+		err = mbClient.Unsubscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		myAnnouncements = mbClient.GetAnnouncementsForVni(vni)
+		Expect(len(myAnnouncements)).To(Equal(0))
+	})
+
+	It("should get routes for vni", func() {
+		mbClient := NewMetalBond(Config{}, dummyClient)
+		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")
+		Expect(err).NotTo(HaveOccurred())
+
+		clientAddr := getLocalAddr(mbClient, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+
+		vni := VNI(200)
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(mbClient.IsSubscribed(vni)).To(BeTrue())
+
+		// prepare the route
+		startIP := net.ParseIP("100.64.0.0")
+		ip := incrementIPv4(startIP, 1)
+		addr, err := netip.ParseAddr(ip.String())
+		Expect(err).NotTo(HaveOccurred())
+		underlayRoute, err := netip.ParseAddr(fmt.Sprintf("b198:5b10:3880:fd32:fb80:80dd:46f7:%d", 1))
+		Expect(err).NotTo(HaveOccurred())
+		dest := Destination{
+			Prefix:    netip.PrefixFrom(addr, 32),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: underlayRoute,
+		}
+
+		err = mbClient.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		// wait for the route to be received
+		time.Sleep(3 * time.Second)
+
+		err = mbClient.GetRoutesForVni(vni)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	It("multiple metalbond reconnect", func() {
-		mbClient1 := NewMetalBond(Config{}, client)
+		mbClient1 := NewMetalBond(Config{}, dummyClient)
 		localIP1 := net.ParseIP("127.0.0.2")
 		err := mbClient1.AddPeer(serverAddress1, localIP1.String())
 		Expect(err).NotTo(HaveOccurred())
 		err = mbClient1.AddPeer(serverAddress2, localIP1.String())
 		Expect(err).NotTo(HaveOccurred())
 
-		mbClient2 := NewMetalBond(Config{}, client)
+		mbClient2 := NewMetalBond(Config{}, dummyClient)
 		localIP2 := net.ParseIP("127.0.0.3")
 		err = mbClient2.AddPeer(serverAddress1, localIP2.String())
 		Expect(err).NotTo(HaveOccurred())
@@ -190,15 +277,9 @@ var _ = Describe("Peer", func() {
 		time.Sleep(5 * time.Second)
 		vni := VNI(200)
 		err = mbClient1.Subscribe(vni)
-		if err != nil {
-			log.Errorf("subscribe failed: %v", err)
-		}
 		Expect(err).NotTo(HaveOccurred())
 
 		err = mbClient2.Subscribe(vni)
-		if err != nil {
-			log.Errorf("subscribe failed: %v", err)
-		}
 		Expect(err).NotTo(HaveOccurred())
 
 		// prepare the route
@@ -248,18 +329,29 @@ var _ = Describe("Peer", func() {
 
 		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest][nextHop])
 		Expect(mbClient2Routes).To(Equal(2))
+
+		err = mbClient1.WithdrawRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(2 * time.Second)
+
+		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
+
+		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		Expect(mbClient2Routes).To(Equal(0))
 	})
 
 	It("should announce", func() {
-		totalClients := 600 // TODO: was 1000 (local test works for this large value), but it is reduced to this value to make CI/CD happy
+		totalClients := 600
 		var wg sync.WaitGroup
 
-		for i := 1; i < totalClients+1; i++ {
+		for i := 1; i <= totalClients; i++ {
 			wg.Add(1)
 
 			go func(index int) {
 				defer wg.Done()
-				mbClient := NewMetalBond(Config{}, client)
+				mbClient := NewMetalBond(Config{}, dummyClient)
 				localIP := net.ParseIP("127.0.0.2")
 				localIP = incrementIPv4(localIP, index)
 				err := mbClient.AddPeer(serverAddress1, localIP.String())
@@ -279,9 +371,6 @@ var _ = Describe("Peer", func() {
 				Expect(waitForPeerState(mbClient, serverAddress1, ESTABLISHED)).NotTo(BeFalse())
 				vni := VNI(index % 10)
 				err = mbClient.Subscribe(vni)
-				if err != nil {
-					log.Errorf("subscribe failed: %v", err)
-				}
 				Expect(err).NotTo(HaveOccurred())
 
 				// prepare the route
@@ -324,10 +413,7 @@ var _ = Describe("Peer", func() {
 
 				notExcept := clientAddr
 				clientAddr = getLocalAddr(mbClient, notExcept)
-				if clientAddr == "" {
-					log.Errorf("clientAddr is empty '%s'", clientAddr)
-				}
-				Expect(clientAddr).ShouldNot(BeEmpty())
+				Expect(clientAddr).NotTo(BeEmpty())
 
 				// check if the peer is established again
 				Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
@@ -341,22 +427,6 @@ var _ = Describe("Peer", func() {
 
 				// check if the route was received
 				_, exists = p.receivedRoutes.routes[vni][dest][nextHop][p]
-				if !exists {
-					log.Errorf("route not received vni %v, dest %v, nextHop %v, clientAddr %s", vni, dest, nextHop, clientAddr)
-					for vni, dest := range p.receivedRoutes.routes {
-						log.Errorf("vni %v", vni)
-						for dest, nextHop := range dest {
-							log.Errorf("dest %v", dest)
-							for nextHop, peers := range nextHop {
-								log.Errorf("nextHop %v", nextHop)
-								for peer := range peers {
-									log.Errorf("peer %v", peer)
-								}
-							}
-						}
-					}
-
-				}
 				Expect(exists).To(BeTrue())
 			}(i)
 		}
