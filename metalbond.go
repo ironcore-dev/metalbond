@@ -9,8 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ironcore-dev/metalbond/pb"
 	"github.com/sirupsen/logrus"
+
+	"github.com/ironcore-dev/metalbond/pb"
 )
 
 type MetalBond struct {
@@ -102,6 +103,18 @@ func (m *MetalBond) unsafeRemovePeer(addr string) {
 		m.mtxPeers.Lock()
 		delete(m.peers, addr)
 		m.mtxPeers.Unlock()
+	}
+}
+
+func (m *MetalBond) ResetPeer(addr string) {
+	m.log().Infof("Resetting peer %s", addr)
+	m.mtxPeers.RLock()
+	p, exists := m.peers[addr]
+	m.mtxPeers.RUnlock()
+	if !exists {
+		m.log().Errorf("Peer %s does not exist", addr)
+	} else {
+		go p.Reset()
 	}
 }
 
@@ -210,7 +223,6 @@ func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error 
 }
 
 func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error {
-
 	m.log().Infof("withdraw a route for VNI %d: %s via %s", vni, dest, hop)
 
 	err, remaining := m.myAnnouncements.RemoveNextHop(vni, dest, hop, nil)
