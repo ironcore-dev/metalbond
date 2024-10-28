@@ -217,6 +217,63 @@ var _ = Describe("Peer", func() {
 		Expect(len(myAnnouncements)).To(Equal(0))
 	})
 
+	FIt("should distribute routes if one peer is closed", func() {
+		mbClient1 := NewMetalBond(Config{}, dummyClient)
+		localIP1 := net.ParseIP("127.0.0.2")
+		err := mbClient1.AddPeer(serverAddress1, localIP1.String())
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient1.AddPeer(serverAddress2, localIP1.String())
+		Expect(err).NotTo(HaveOccurred())
+
+		mbClient2 := NewMetalBond(Config{}, dummyClient)
+		localIP2 := net.ParseIP("127.0.0.3")
+		err = mbClient2.AddPeer(serverAddress1, localIP2.String())
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient2.AddPeer(serverAddress2, localIP2.String())
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(5 * time.Second)
+		vni := VNI(200)
+		err = mbClient1.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = mbClient2.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		// prepare the route
+		startIP := net.ParseIP("100.64.0.0")
+		ip := incrementIPv4(startIP, 1)
+		addr, err := netip.ParseAddr(ip.String())
+		Expect(err).NotTo(HaveOccurred())
+		underlayRoute, err := netip.ParseAddr(fmt.Sprintf("b198:5b10:3880:fd32:fb80:80dd:46f7:%d", 1))
+		Expect(err).NotTo(HaveOccurred())
+		dest := Destination{
+			Prefix:    netip.PrefixFrom(addr, 32),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: underlayRoute,
+		}
+
+		clientAddr := getLocalAddr(mbClient1, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		mbClient1.peers[serverAddress1].state = CLOSED
+
+		err = mbClient1.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).To(HaveOccurred())
+
+		// wait for the route to be received
+		time.Sleep(3 * time.Second)
+
+		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest][nextHop])
+		Expect(mbClient1Routes).To(Equal(1))
+
+		mbClient2Routes := len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		Expect(mbClient2Routes).To(Equal(1))
+	})
+
 	It("should get routes for vni", func() {
 		mbClient := NewMetalBond(Config{}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2")

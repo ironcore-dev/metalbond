@@ -242,6 +242,8 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	m.mtxSubscribers.RLock()
 	defer m.mtxSubscribers.RUnlock()
 
+	var errors []error // Collect errors
+
 	// if this node is the origin of the route (fromPeer == nil):
 	if fromPeer == nil {
 		for _, sp := range m.peers {
@@ -255,43 +257,46 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 			err := sp.SendUpdate(upd)
 			if err != nil {
 				m.log().WithField("peer", sp).Debugf("Could not send update to peer: %v", err)
-				return err
+				errors = append(errors, err)
 			}
 		}
-		return nil
+	} else {
+		// if no one has subscribed to this VNI, we don't need to distribute the route
+		if _, exists := m.subscribers[vni]; !exists {
+			return nil
+		}
+
+		// send route to all peers who have subscribed to this VNI - with exceptions:
+		for p := range m.subscribers[vni] {
+			// don't send route back to the peer we got it from
+			if p == fromPeer && hop.Type == pb.NextHopType_NAT {
+				continue
+			}
+
+			// Server to server communication exception
+			if fromPeer.isServer && p.isServer {
+				continue
+			}
+
+			upd := msgUpdate{
+				Action:      action,
+				VNI:         vni,
+				Destination: dest,
+				NextHop:     hop,
+			}
+
+			err := p.SendUpdate(upd)
+			if err != nil {
+				m.log().WithField("peer", p).Debugf("Could not send update to peer: %v", err)
+				errors = append(errors, err)
+			}
+		}
 	}
 
-	// if no one has subscribed to this VNI, we don't need to distribute the route
-	if _, exists := m.subscribers[vni]; !exists {
-		return nil
+	// Consolidate and return errors if any
+	if len(errors) > 0 {
+		return fmt.Errorf("distributeRouteToPeers encountered %d errors", len(errors))
 	}
-
-	// send route to all peers who have subscribed to this VNI - with few exceptions:
-	for p := range m.subscribers[vni] {
-		// don't send route back to the peer we got it from
-		// Only for NAT routes
-		if p == fromPeer && hop.Type == pb.NextHopType_NAT {
-			continue
-		}
-
-		// TODO: Server to server communication
-		if fromPeer.isServer && p.isServer {
-			continue
-		}
-
-		upd := msgUpdate{
-			Action:      action,
-			VNI:         vni,
-			Destination: dest,
-			NextHop:     hop,
-		}
-
-		err := p.SendUpdate(upd)
-		if err != nil {
-			m.log().WithField("peer", p).Debugf("Could not send update to peer: %v", err)
-		}
-	}
-
 	return nil
 }
 
