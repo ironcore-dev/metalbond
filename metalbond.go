@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ironcore-dev/metalbond/pb"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 )
 
@@ -44,6 +45,10 @@ func NewMetalBond(config Config, client Client) *MetalBond {
 		config.KeepaliveInterval = 5
 	}
 
+	registerer := prometheus.DefaultRegisterer
+	gatherer := prometheus.DefaultGatherer
+	RegisterMetrics(registerer, gatherer)
+
 	m := MetalBond{
 		routeTable:        newRouteTable(),
 		myAnnouncements:   newRouteTable(),
@@ -63,7 +68,7 @@ func (m *MetalBond) StartHTTPServer(listen string) error {
 	return nil
 }
 
-func (m *MetalBond) AddPeer(addr, localIP string) error {
+func (m *MetalBond) AddPeer(addr, localIP string, txChanCapacity, rxChanEventCapacity, rxChanDataUpdateCapacity int) error {
 	m.mtxPeers.Lock()
 	defer m.mtxPeers.Unlock()
 
@@ -72,13 +77,7 @@ func (m *MetalBond) AddPeer(addr, localIP string) error {
 		return fmt.Errorf("Peer already registered")
 	}
 
-	m.peers[addr] = newMetalBondPeer(
-		nil,
-		addr,
-		localIP,
-		m.keepaliveInterval,
-		OUTGOING,
-		m)
+	m.peers[addr] = newMetalBondPeer(nil, addr, localIP, txChanCapacity, rxChanEventCapacity, rxChanDataUpdateCapacity, m.keepaliveInterval, OUTGOING, m)
 
 	return nil
 }
@@ -102,6 +101,18 @@ func (m *MetalBond) unsafeRemovePeer(addr string) {
 		m.mtxPeers.Lock()
 		delete(m.peers, addr)
 		m.mtxPeers.Unlock()
+	}
+}
+
+func (m *MetalBond) ResetPeer(addr string) {
+	m.log().Infof("Resetting peer %s", addr)
+	m.mtxPeers.RLock()
+	p, exists := m.peers[addr]
+	m.mtxPeers.RUnlock()
+	if !exists {
+		m.log().Errorf("Peer %s does not exist", addr)
+	} else {
+		go p.Reset()
 	}
 }
 
@@ -464,7 +475,7 @@ func (m *MetalBond) removeSubscriber(peer *metalBondPeer, vni VNI) error {
 
 // StartServer starts the MetalBond server asynchronously.
 // To stop the server again, call Shutdown().
-func (m *MetalBond) StartServer(listenAddress string) error {
+func (m *MetalBond) StartServer(listenAddress string, txChanCapacity, rxChanEventCapacity, rxChanDataUpdateCapacity int) error {
 	lis, err := net.Listen("tcp", listenAddress)
 	m.lis = &lis
 	if err != nil {
@@ -488,6 +499,9 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 				&conn,
 				conn.RemoteAddr().String(),
 				"",
+				txChanCapacity,
+				rxChanEventCapacity,
+				rxChanDataUpdateCapacity,
 				m.keepaliveInterval,
 				INCOMING,
 				m,
