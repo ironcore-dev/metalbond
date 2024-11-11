@@ -58,18 +58,12 @@ func main() {
 	}
 	log.Infof("MetalBond Version: %s", metalbond.METALBOND_VERSION)
 
-	go func() {
-		for {
-			log.Debugf("Active Go Routines: %d", runtime.NumGoroutine())
-			time.Sleep(time.Duration(10 * time.Second))
-		}
-	}()
-
 	ctx := kong.Parse(&CLI)
 	switch ctx.Command() {
 	case "server":
 		if CLI.Server.Verbose {
 			log.SetLevel(log.DebugLevel)
+			go showActiveGoRoutines()
 		}
 
 		config := metalbond.Config{
@@ -120,6 +114,7 @@ func main() {
 
 		if CLI.Client.Verbose {
 			log.SetLevel(log.DebugLevel)
+			go showActiveGoRoutines()
 		}
 
 		config := metalbond.Config{
@@ -309,5 +304,12 @@ func main() {
 
 	default:
 		log.Errorf("Error: %v", ctx.Command())
+	}
+}
+
+func showActiveGoRoutines() {
+	for {
+		log.Debugf("Active Go Routines: %d", runtime.NumGoroutine())
+		time.Sleep(10 * time.Second)
 	}
 }

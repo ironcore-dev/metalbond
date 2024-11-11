@@ -111,28 +111,29 @@ func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
 		return fmt.Errorf("cannot parse destination prefix: %v", err)
 	}
 
-	err = c.routeTable.AddNextHop(vni, dest, hop, c.mbp)
-	if err != nil {
-		return fmt.Errorf("cannot add route to internal table vni: %d dest: %s hop: %s error: %v", vni, dest, hop, err)
+	if !c.routeTable.NextHopExists(vni, dest, hop, c.mbp) {
+		err = c.routeTable.AddNextHop(vni, dest, hop, c.mbp)
+		if err != nil {
+			return fmt.Errorf("cannot add route to internal table vni: %d dest: %s hop: %s error: %v", vni, dest, hop, err)
+		}
+
+		route := &netlink.Route{
+			Dst:      dst,
+			Table:    table,
+			Protocol: c.rtProto,
+		} // by default, the route is already installed into the kernel table without explicite specification
+
+		var multiPath []*netlink.NexthopInfo
+		for _, nextHop := range c.routeTable.GetNextHopsByDestination(vni, dest) {
+			nexthopInfo := c.createNexthopInfo(nextHop)
+			multiPath = append(multiPath, nexthopInfo)
+		}
+
+		route.MultiPath = multiPath
+		if err := netlink.RouteReplace(route); err != nil {
+			return fmt.Errorf("cannot replace ecmp route to %s (table %d) to kernel: %v", dest, table, err)
+		}
 	}
-
-	route := &netlink.Route{
-		Dst:      dst,
-		Table:    table,
-		Protocol: c.rtProto,
-	} // by default, the route is already installed into the kernel table without explicite specification
-
-	var multiPath []*netlink.NexthopInfo
-	for _, nextHop := range c.routeTable.GetNextHopsByDestination(vni, dest) {
-		nexthopInfo := c.createNexthopInfo(nextHop)
-		multiPath = append(multiPath, nexthopInfo)
-	}
-
-	route.MultiPath = multiPath
-	if err := netlink.RouteReplace(route); err != nil {
-		return fmt.Errorf("cannot replace ecmp route to %s (table %d) to kernel: %v", dest, table, err)
-	}
-
 	return nil
 }
 
