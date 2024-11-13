@@ -1,4 +1,4 @@
-FROM golang:1.22-bullseye AS builder
+FROM golang:1.22-bookworm AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GOARCH=''
@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$METALBOND_VERSION" -o metalbond cmd/cmd.go
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/metalbond /usr/sbin/metalbond
