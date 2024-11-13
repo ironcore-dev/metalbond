@@ -267,7 +267,7 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 
 			err := sp.SendUpdate(upd)
 			if err != nil {
-				m.log().WithField("peer", sp).Debugf("Could not send update to peer: %v", err)
+				m.log().WithField("peer", sp).Errorf("Could not send update to peer: %v", err)
 				errors = append(errors, err)
 			}
 		}
@@ -298,7 +298,7 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 
 			err := p.SendUpdate(upd)
 			if err != nil {
-				m.log().WithField("peer", p).Debugf("Could not send update to peer: %v", err)
+				m.log().WithField("peer", p).Errorf("Could not send update to peer: %v", err)
 				errors = append(errors, err)
 			}
 		}

@@ -184,7 +184,7 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 
 					err := p.SendUpdate(upd)
 					if err != nil {
-						p.log().Debugf("Could not send update to peer: %v", err)
+						p.log().Errorf("Could not send update to peer: %v", err)
 					}
 				}
 			}
