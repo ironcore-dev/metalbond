@@ -401,6 +401,7 @@ func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
 	}
 
 	if _, exists := m.subscribers[vni][peer]; exists {
+		m.mtxSubscribers.Unlock()
 		return fmt.Errorf("Peer is already subscribed!")
 	}
 
