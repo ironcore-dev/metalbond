@@ -144,6 +144,46 @@ var _ = Describe("Peer", func() {
 		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
 	})
 
+	It("metalbond timeout", func() {
+		mbClient := NewMetalBond(Config{}, dummyClient)
+		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientAddr := getLocalAddr(mbClient, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+
+		vni := VNI(200)
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		var serverPeer *metalBondPeer
+		for _, peer := range mbServer1.peers {
+			serverPeer = peer
+			break
+		}
+
+		var clientPeer *metalBondPeer
+		for _, peer := range mbClient.peers {
+			clientPeer = peer
+			break
+		}
+
+		err = mbClient.Unsubscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		serverPeer.stopReceive = true
+
+		time.Sleep(12 * time.Second)
+
+		// expect the peer state to be closed
+		Expect(clientPeer.GetState()).To(Equal(RETRY))
+
+		err = mbClient.RemovePeer(serverAddress1)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	It("dummyClient timeout", func() {
 		mbClient := NewMetalBond(Config{}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)

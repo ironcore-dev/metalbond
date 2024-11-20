@@ -62,6 +62,9 @@ type metalBondPeer struct {
 	maxRxChanSubscribeMaxDepth   int
 	maxRxChanUnsubscribeMaxDepth int
 	maxRxChanUpdateMaxDepth      int
+
+	// only used for unit test
+	stopReceive bool
 }
 
 func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChanCapacity int, rxChanEventCapacity int, rxChanDataUpdateCapacity int, keepaliveInterval uint32, direction ConnectionDirection, metalbond *MetalBond) *metalBondPeer {
@@ -404,6 +407,10 @@ func (p *metalBondPeer) rxLoop() {
 	buf := make([]byte, 65535)
 
 	for {
+		if p.stopReceive {
+			time.Sleep(1 * time.Second)
+			continue
+		}
 		// TODO: read full packets!!!!
 		bytesRead, err := (*p.conn).Read(buf)
 		if p.GetState() == CLOSED || p.GetState() == RETRY {
@@ -780,9 +787,20 @@ func (p *metalBondPeer) txLoop() {
 	p.wg.Add(1)
 	defer p.wg.Done()
 
+	writeTimeout := 5 * time.Second
+
 	for {
 		select {
 		case msg := <-p.txChan:
+			// Set a write deadline before each message
+			err := (*p.conn).SetWriteDeadline(time.Now().Add(writeTimeout))
+			if err != nil {
+				p.log().Errorf("Error setting write deadline: %v", err)
+				go p.Reset()
+				return
+			}
+
+			// Write the message
 			n, err := (*p.conn).Write(msg)
 			if n != len(msg) || err != nil {
 				p.log().Errorf("Could not transmit message completely: %v", err)
