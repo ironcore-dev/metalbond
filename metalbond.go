@@ -328,6 +328,11 @@ func (m *MetalBond) GetRoutesForVni(vni VNI) error {
 	return nil
 }
 
+func (m *MetalBond) GetNextHopForVniAndDestination(vni VNI, dest Destination) []NextHop {
+	hops := m.routeTable.GetNextHopsByDestination(vni, dest)
+	return hops
+}
+
 func (m *MetalBond) GetSubscribedVnis() []VNI {
 	m.mtxMySubscriptions.RLock()
 	defer m.mtxMySubscriptions.RUnlock()
