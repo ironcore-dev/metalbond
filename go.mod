@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/alecthomas/kong v0.9.0
+	github.com/davecgh/go-spew v1.1.1
 	github.com/google/addlicense v1.1.1
 	github.com/google/uuid v1.3.0
 	github.com/onsi/ginkgo/v2 v2.15.0

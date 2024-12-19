@@ -9,6 +9,7 @@ import (
 
 	"net/netip"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ironcore-dev/metalbond/pb"
 	"google.golang.org/protobuf/proto"
 )
@@ -138,7 +139,7 @@ func (m msgHello) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("Could not marshal hello message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
@@ -170,7 +171,7 @@ func (msg msgSubscribe) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("Could not marshal subscribe message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
@@ -193,7 +194,7 @@ func (msg msgUnsubscribe) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("Could not marshal unsubscribe message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
@@ -233,7 +234,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case IPV6:
 		pbmsg.Destination.IpVersion = pb.IPVersion_IPv6
 	default:
-		return nil, fmt.Errorf("Invalid Destination IP version")
+		return nil, fmt.Errorf("Invalid Destination IP version, msg: %s", spew.Sprintf("%#v", msg))
 	}
 	pbmsg.Destination.Prefix = msg.Destination.Prefix.Addr().AsSlice()
 	pbmsg.Destination.PrefixLength = uint32(msg.Destination.Prefix.Bits())
@@ -249,7 +250,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("Could not marshal update message: %v, msg: %s", err, spew.Sprintf("%#v", msg))
 	}
 
 	if len(msgBytes) > 1188 {

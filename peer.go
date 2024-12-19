@@ -64,7 +64,8 @@ type metalBondPeer struct {
 	maxRxChanUpdateMaxDepth      int
 
 	// only used for unit test
-	stopReceive bool
+	stopReceive       bool
+	lastKeepaliveSent time.Time
 }
 
 func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChanCapacity int, rxChanEventCapacity int, rxChanDataUpdateCapacity int, keepaliveInterval uint32, direction ConnectionDirection, metalbond *MetalBond) *metalBondPeer {
@@ -100,6 +101,10 @@ func (p *metalBondPeer) GetState() ConnectionState {
 	state := p.state
 	p.mtxState.RUnlock()
 	return state
+}
+
+func (p *metalBondPeer) GetLastKeepaliveSent() time.Time {
+	return p.lastKeepaliveSent
 }
 
 func (p *metalBondPeer) Subscribe(vni VNI) error {
@@ -694,6 +699,7 @@ func (p *metalBondPeer) keepaliveLoop() {
 
 	// Sending initial KEEPALIVE message
 	if p.direction == OUTGOING {
+		p.lastKeepaliveSent = time.Now()
 		if err := p.sendMessage(msgKeepalive{}); err != nil {
 			p.log().Errorf("Failed to send message: %v", err)
 		}
@@ -704,6 +710,7 @@ func (p *metalBondPeer) keepaliveLoop() {
 		// Ticker triggers sending KEEPALIVE messages
 		case <-tckr.C:
 			if p.direction == OUTGOING {
+				p.lastKeepaliveSent = time.Now()
 				if err := p.sendMessage(msgKeepalive{}); err != nil {
 					p.log().Errorf("Failed to send message: %v", err)
 				}
@@ -716,7 +723,7 @@ func (p *metalBondPeer) keepaliveLoop() {
 
 		// keepaliveStop chan delivers message to stop this routine
 		case <-p.keepaliveStop:
-			p.log().Tracef("Stopping keepaliveLoop")
+			p.log().Infof("Stopping keepaliveLoop")
 			p.keepaliveTimer.Stop()
 			return
 		}
