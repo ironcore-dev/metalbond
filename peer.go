@@ -193,6 +193,7 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 						NextHop:     hop,
 					}
 
+					fmt.Printf("setState: %s, %v\n", dest.String(), dest.IPVersion)
 					err := p.SendUpdate(upd)
 					if err != nil {
 						p.log().Errorf("Could not send update to peer: %v", err)
