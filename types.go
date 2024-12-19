@@ -234,7 +234,13 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case IPV6:
 		pbmsg.Destination.IpVersion = pb.IPVersion_IPv6
 	default:
-		return nil, fmt.Errorf("Invalid Destination IP version, msg: %s", spew.Sprintf("%#v", msg))
+		if msg.Destination.Prefix.Addr().Is4() {
+			pbmsg.Destination.IpVersion = pb.IPVersion_IPv4
+		} else if msg.Destination.Prefix.Addr().Is6() {
+			pbmsg.Destination.IpVersion = pb.IPVersion_IPv6
+		} else {
+			return nil, fmt.Errorf("Invalid Destination IP version, msg: %s", spew.Sprintf("%#v", msg))
+		}
 	}
 	pbmsg.Destination.Prefix = msg.Destination.Prefix.Addr().AsSlice()
 	pbmsg.Destination.PrefixLength = uint32(msg.Destination.Prefix.Bits())
