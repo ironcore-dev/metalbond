@@ -437,7 +437,6 @@ func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
 				if peerFromList == peer && hop.Type == pb.NextHopType_NAT {
 					continue
 				}
-				fmt.Printf("addSubscriber %s, %v\n", dest.String(), dest.IPVersion)
 				err := peer.SendUpdate(msgUpdate{
 					Action:      ADD,
 					VNI:         vni,

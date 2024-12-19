@@ -166,6 +166,7 @@ func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, received
 		return fmt.Errorf("Nexthop already exists")
 	}
 
+	fmt.Printf("Adding nexthop %s to route table, %v\n", dest.Prefix, dest.IPVersion)
 	rt.routes[vni][dest][nh][receivedFrom] = true
 
 	return nil
