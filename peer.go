@@ -6,6 +6,7 @@ package metalbond
 import (
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"io"
 	"math/rand"
 	"net"
@@ -148,6 +149,8 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 }
 
 func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
+	fmt.Printf("SendUpdate: %#v, %v\n", upd, upd.Destination.IPVersion)
+
 	if p.GetState() != ESTABLISHED {
 		return fmt.Errorf("Connection not ESTABLISHED")
 	}
@@ -737,6 +740,7 @@ func (p *metalBondPeer) resetKeepaliveTimeout() {
 }
 
 func (p *metalBondPeer) sendMessage(msg message) error {
+	fmt.Printf("sendMessage: %s\n", spew.Sprintf("%#v", msg))
 	p.log().Tracef("sendMessage")
 	if p.GetState() == CLOSED {
 		err := errors.New("State is closed")

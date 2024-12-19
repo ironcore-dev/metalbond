@@ -262,6 +262,7 @@ func (m *MetalBond) getMyAnnouncements() *routeTable {
 func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest Destination, hop NextHop, fromPeer *metalBondPeer) error {
 	m.mtxPeers.RLock()
 	defer m.mtxPeers.RUnlock()
+	fmt.Printf("distributeRouteToPeers: %s, %d, %s, %s, %s, %v\n", action, vni, dest, hop, fromPeer, dest.IPVersion)
 
 	m.mtxSubscribers.RLock()
 	defer m.mtxSubscribers.RUnlock()

@@ -228,6 +228,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 		return nil, fmt.Errorf("Invalid UPDATE action")
 	}
 
+	fmt.Printf("Destination IPVersion: %v\n", msg.Destination.IPVersion)
 	switch msg.Destination.IPVersion {
 	case IPV4:
 		pbmsg.Destination.IpVersion = pb.IPVersion_IPv4
