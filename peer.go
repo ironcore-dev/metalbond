@@ -647,10 +647,11 @@ func (p *metalBondPeer) Close() {
 	p.log().Debug("Close")
 	if p.GetState() != CLOSED {
 		p.setState(CLOSED)
-		p.txChanClose <- true
-		p.shutdown <- true
-		p.keepaliveStop <- true
 	}
+
+	p.txChanClose <- true
+	p.shutdown <- true
+	p.keepaliveStop <- true
 }
 
 func (p *metalBondPeer) Reset() {
