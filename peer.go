@@ -64,8 +64,9 @@ type metalBondPeer struct {
 	maxRxChanUpdateMaxDepth      int
 
 	// only used for unit test
-	stopReceive       bool
-	lastKeepaliveSent time.Time
+	stopReceive           bool
+	lastKeepaliveSent     time.Time
+	lastKeepaliveReceived time.Time
 }
 
 func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChanCapacity int, rxChanEventCapacity int, rxChanDataUpdateCapacity int, keepaliveInterval uint32, direction ConnectionDirection, metalbond *MetalBond) *metalBondPeer {
@@ -105,6 +106,10 @@ func (p *metalBondPeer) GetState() ConnectionState {
 
 func (p *metalBondPeer) GetLastKeepaliveSent() time.Time {
 	return p.lastKeepaliveSent
+}
+
+func (p *metalBondPeer) GetLastKeepaliveReceived() time.Time {
+	return p.lastKeepaliveReceived
 }
 
 func (p *metalBondPeer) Subscribe(vni VNI) error {
@@ -558,6 +563,7 @@ func (p *metalBondPeer) processRxKeepalive(msg msgKeepalive) {
 		return
 	}
 
+	p.lastKeepaliveReceived = time.Now()
 	p.resetKeepaliveTimeout()
 
 	// The server must respond incoming KEEPALIVE messages with an own KEEPALIVE message.
@@ -814,7 +820,7 @@ func (p *metalBondPeer) txLoop() {
 				go p.Reset()
 			}
 		case <-p.txChanClose:
-			p.log().Debugf("Closing TCP connection")
+			p.log().Infof("Closing TCP connection")
 			(*p.conn).Close()
 			return
 		}

@@ -142,6 +142,19 @@ func (m *MetalBond) PeerLastKeepaliveSent(addr string) (time.Time, error) {
 	}
 }
 
+func (m *MetalBond) PeerLastKeepaliveReceived(addr string) (time.Time, error) {
+	m.mtxPeers.RLock()
+	defer m.mtxPeers.RUnlock()
+
+	m.log().Tracef("PeerLastKeepaliveReceived() peer %s", addr)
+	if _, exists := m.peers[addr]; exists {
+		lastKeepaliveReceived := m.peers[addr].GetLastKeepaliveReceived()
+		return lastKeepaliveReceived, nil
+	} else {
+		return time.Unix(0, 0), fmt.Errorf("Peer %s does not exist", addr)
+	}
+}
+
 func (m *MetalBond) Subscribe(vni VNI) error {
 	m.mtxMySubscriptions.Lock()
 	defer func() {
