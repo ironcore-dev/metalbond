@@ -5,20 +5,32 @@ package metalbond
 
 import (
 	"fmt"
+	"net/netip"
 	"sync"
 )
 
+// routeTable maintains the routing structure
 type routeTable struct {
 	rwmtx  sync.RWMutex
-	routes map[VNI]map[Destination]map[NextHop]map[*metalBondPeer]bool
+	routes map[VNI]map[string]map[NextHop]map[*metalBondPeer]bool
 }
 
+// newRouteTable initializes a new route table
 func newRouteTable() routeTable {
 	return routeTable{
-		routes: make(map[VNI]map[Destination]map[NextHop]map[*metalBondPeer]bool),
+		routes: make(map[VNI]map[string]map[NextHop]map[*metalBondPeer]bool),
 	}
 }
 
+// deriveIPVersion determines the IPVersion from a prefix
+func deriveIPVersion(prefix netip.Prefix) IPVersion {
+	if prefix.Addr().Is4() {
+		return IPV4
+	}
+	return IPV6
+}
+
+// GetVNIs returns the VNIs available in the route table
 func (rt *routeTable) GetVNIs() []VNI {
 	rt.rwmtx.RLock()
 	defer rt.rwmtx.RUnlock()
@@ -30,6 +42,7 @@ func (rt *routeTable) GetVNIs() []VNI {
 	return vnis
 }
 
+// GetDestinationsByVNI returns destinations by VNI as map[Destination][]NextHop
 func (rt *routeTable) GetDestinationsByVNI(vni VNI) map[Destination][]NextHop {
 	rt.rwmtx.RLock()
 	defer rt.rwmtx.RUnlock()
@@ -40,19 +53,24 @@ func (rt *routeTable) GetDestinationsByVNI(vni VNI) map[Destination][]NextHop {
 		return ret
 	}
 
-	for dest, nhm := range rt.routes[vni] {
-		nhs := []NextHop{}
+	for destStr, nhm := range rt.routes[vni] {
+		prefix := netip.MustParsePrefix(destStr)
+		dest := Destination{
+			Prefix:    prefix,
+			IPVersion: deriveIPVersion(prefix),
+		}
 
+		nhs := []NextHop{}
 		for nh := range nhm {
 			nhs = append(nhs, nh)
 		}
-
 		ret[dest] = nhs
 	}
 
 	return ret
 }
 
+// GetDestinationsByVNIWithPeer returns destinations by VNI along with next hop peers
 func (rt *routeTable) GetDestinationsByVNIWithPeer(vni VNI) map[Destination]map[NextHop][]*metalBondPeer {
 	rt.rwmtx.RLock()
 	defer rt.rwmtx.RUnlock()
@@ -63,7 +81,13 @@ func (rt *routeTable) GetDestinationsByVNIWithPeer(vni VNI) map[Destination]map[
 		return ret
 	}
 
-	for dest, nhm := range rt.routes[vni] {
+	for destStr, nhm := range rt.routes[vni] {
+		prefix := netip.MustParsePrefix(destStr)
+		dest := Destination{
+			Prefix:    prefix,
+			IPVersion: deriveIPVersion(prefix),
+		}
+
 		if ret[dest] == nil {
 			ret[dest] = make(map[NextHop][]*metalBondPeer)
 		}
@@ -80,62 +104,61 @@ func (rt *routeTable) GetDestinationsByVNIWithPeer(vni VNI) map[Destination]map[
 	return ret
 }
 
+// GetNextHopsByDestination returns next hops by destination
 func (rt *routeTable) GetNextHopsByDestination(vni VNI, dest Destination) []NextHop {
 	rt.rwmtx.RLock()
 	defer rt.rwmtx.RUnlock()
 
 	nh := []NextHop{}
+	destKey := dest.Prefix.String()
 
-	// TODO Performance: reused found map pointers
 	if _, exists := rt.routes[vni]; !exists {
 		return nh
 	}
 
-	if _, exists := rt.routes[vni][dest]; !exists {
+	if _, exists := rt.routes[vni][destKey]; !exists {
 		return nh
 	}
 
-	for k := range rt.routes[vni][dest] {
+	for k := range rt.routes[vni][destKey] {
 		nh = append(nh, k)
 	}
 
 	return nh
 }
 
+// RemoveNextHop removes a next hop from the route table
 func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) (error, int) {
 	rt.rwmtx.Lock()
 	defer rt.rwmtx.Unlock()
 
-	if rt.routes == nil {
-		rt.routes = make(map[VNI]map[Destination]map[NextHop]map[*metalBondPeer]bool)
-	}
+	destKey := dest.Prefix.String()
 
-	// TODO Performance: reused found map pointers
 	if _, exists := rt.routes[vni]; !exists {
 		return fmt.Errorf("VNI does not exist"), 0
 	}
 
-	if _, exists := rt.routes[vni][dest]; !exists {
+	if _, exists := rt.routes[vni][destKey]; !exists {
 		return fmt.Errorf("Destination does not exist"), 0
 	}
 
-	if _, exists := rt.routes[vni][dest][nh]; !exists {
+	if _, exists := rt.routes[vni][destKey][nh]; !exists {
 		return fmt.Errorf("Nexthop does not exist"), 0
 	}
 
-	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; !exists {
+	if _, exists := rt.routes[vni][destKey][nh][receivedFrom]; !exists {
 		return fmt.Errorf("ReceivedFrom does not exist"), 0
 	}
 
-	delete(rt.routes[vni][dest][nh], receivedFrom)
-	left := len(rt.routes[vni][dest][nh])
+	delete(rt.routes[vni][destKey][nh], receivedFrom)
+	left := len(rt.routes[vni][destKey][nh])
 
-	if len(rt.routes[vni][dest][nh]) == 0 {
-		delete(rt.routes[vni][dest], nh)
+	if left == 0 {
+		delete(rt.routes[vni][destKey], nh)
 	}
 
-	if len(rt.routes[vni][dest]) == 0 {
-		delete(rt.routes[vni], dest)
+	if len(rt.routes[vni][destKey]) == 0 {
+		delete(rt.routes[vni], destKey)
 	}
 
 	if len(rt.routes[vni]) == 0 {
@@ -145,52 +168,52 @@ func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, recei
 	return nil, left
 }
 
+// AddNextHop adds a new next hop to the route table
 func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) error {
 	rt.rwmtx.Lock()
 	defer rt.rwmtx.Unlock()
 
-	// TODO Performance: reused found map pointers
+	destKey := dest.Prefix.String()
+
 	if _, exists := rt.routes[vni]; !exists {
-		rt.routes[vni] = make(map[Destination]map[NextHop]map[*metalBondPeer]bool)
+		rt.routes[vni] = make(map[string]map[NextHop]map[*metalBondPeer]bool)
 	}
 
-	if _, exists := rt.routes[vni][dest]; !exists {
-		rt.routes[vni][dest] = make(map[NextHop]map[*metalBondPeer]bool)
+	if _, exists := rt.routes[vni][destKey]; !exists {
+		rt.routes[vni][destKey] = make(map[NextHop]map[*metalBondPeer]bool)
 	}
 
-	if _, exists := rt.routes[vni][dest][nh]; !exists {
-		rt.routes[vni][dest][nh] = make(map[*metalBondPeer]bool)
+	if _, exists := rt.routes[vni][destKey][nh]; !exists {
+		rt.routes[vni][destKey][nh] = make(map[*metalBondPeer]bool)
 	}
 
-	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; exists {
+	if _, exists := rt.routes[vni][destKey][nh][receivedFrom]; exists {
 		return fmt.Errorf("Nexthop already exists")
 	}
 
-	rt.routes[vni][dest][nh][receivedFrom] = true
-
+	rt.routes[vni][destKey][nh][receivedFrom] = true
 	return nil
 }
 
+// NextHopExists checks if a next hop exists in the route table
 func (rt *routeTable) NextHopExists(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) bool {
 	rt.rwmtx.Lock()
 	defer rt.rwmtx.Unlock()
 
-	// TODO Performance: reused found map pointers
+	destKey := dest.Prefix.String()
+
 	if _, exists := rt.routes[vni]; !exists {
-		rt.routes[vni] = make(map[Destination]map[NextHop]map[*metalBondPeer]bool)
+		return false
 	}
 
-	if _, exists := rt.routes[vni][dest]; !exists {
-		rt.routes[vni][dest] = make(map[NextHop]map[*metalBondPeer]bool)
+	if _, exists := rt.routes[vni][destKey]; !exists {
+		return false
 	}
 
-	if _, exists := rt.routes[vni][dest][nh]; !exists {
-		rt.routes[vni][dest][nh] = make(map[*metalBondPeer]bool)
+	if _, exists := rt.routes[vni][destKey][nh]; !exists {
+		return false
 	}
 
-	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; exists {
-		return true
-	}
-
-	return false
+	_, exists := rt.routes[vni][destKey][nh][receivedFrom]
+	return exists
 }

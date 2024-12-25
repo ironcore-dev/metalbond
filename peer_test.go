@@ -317,10 +317,10 @@ var _ = Describe("Peer", func() {
 		// wait for the route to be received
 		time.Sleep(3 * time.Second)
 
-		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest][nextHop])
-		Expect(mbClient1Routes).To(Equal(1))
+		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
 
-		mbClient2Routes := len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		mbClient2Routes := len(mbClient2.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient2Routes).To(Equal(1))
 	})
 
@@ -411,10 +411,10 @@ var _ = Describe("Peer", func() {
 		// wait for the route to be received
 		time.Sleep(3 * time.Second)
 
-		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest][nextHop])
-		Expect(mbClient1Routes).To(Equal(2))
+		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
 
-		mbClient2Routes := len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		mbClient2Routes := len(mbClient2.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient2Routes).To(Equal(2))
 
 		for _, peer := range mbServer1.peers {
@@ -423,18 +423,18 @@ var _ = Describe("Peer", func() {
 
 		time.Sleep(1 * time.Second)
 
-		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest][nextHop])
-		Expect(mbClient1Routes).To(Equal(1))
+		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
 
-		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient2Routes).To(Equal(1))
 
 		time.Sleep(10 * time.Second)
 
-		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest][nextHop])
-		Expect(mbClient1Routes).To(Equal(2))
+		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
 
-		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient2Routes).To(Equal(2))
 
 		err = mbClient1.WithdrawRoute(vni, dest, nextHop)
@@ -442,10 +442,10 @@ var _ = Describe("Peer", func() {
 
 		time.Sleep(2 * time.Second)
 
-		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest][nextHop])
+		mbClient1Routes = len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient1Routes).To(Equal(0))
 
-		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest][nextHop])
+		mbClient2Routes = len(mbClient2.routeTable.routes[vni][dest.String()][nextHop])
 		Expect(mbClient2Routes).To(Equal(0))
 	})
 
@@ -503,7 +503,7 @@ var _ = Describe("Peer", func() {
 				time.Sleep(3 * time.Second)
 
 				// check if the route was received
-				_, exists := p.receivedRoutes.routes[vni][dest][nextHop][p]
+				_, exists := p.receivedRoutes.routes[vni][dest.String()][nextHop][p]
 				Expect(exists).To(BeTrue())
 				Expect(err).NotTo(HaveOccurred())
 
@@ -533,7 +533,7 @@ var _ = Describe("Peer", func() {
 				time.Sleep(3 * time.Second)
 
 				// check if the route was received
-				_, exists = p.receivedRoutes.routes[vni][dest][nextHop][p]
+				_, exists = p.receivedRoutes.routes[vni][dest.String()][nextHop][p]
 				Expect(exists).To(BeTrue())
 			}(i)
 		}
