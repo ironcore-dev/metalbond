@@ -178,6 +178,7 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 	if oldState != newState && newState == ESTABLISHED {
 		p.metalbond.mtxMySubscriptions.RLock()
 		for sub := range p.metalbond.mySubscriptions {
+			p.log().Debugf("Replay subscription to VNI %d", sub)
 			if err := p.Subscribe(sub); err != nil {
 				p.log().Errorf("Cannot subscribe: %v", err)
 			}
@@ -195,6 +196,11 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 						NextHop:     hop,
 					}
 
+					p.log().Debugf(
+						"Replaying route to VNI %d, dest %s, next hop %s",
+						vni,
+						dest.String(),
+						hop.String())
 					err := p.SendUpdate(upd)
 					if err != nil {
 						p.log().Errorf("Could not send update to peer: %v", err)
@@ -240,8 +246,8 @@ func (p *metalBondPeer) cleanup() {
 	p.log().Debugf("cleanup")
 
 	// unsubscribe from VNIs
-	p.mtxSubscribedVNIs.RLock()
-	defer p.mtxSubscribedVNIs.RUnlock()
+	p.mtxSubscribedVNIs.Lock()
+	defer p.mtxSubscribedVNIs.Unlock()
 
 	for vni := range p.subscribedVNIs {
 		err := p.metalbond.Unsubscribe(vni)
@@ -414,82 +420,117 @@ func (p *metalBondPeer) rxLoop() {
 	p.wg.Add(1)
 	defer p.wg.Done()
 
-	buf := make([]byte, 65535)
+	var pktBuf []byte // Buffer to accumulate incoming bytes
+	readTimeout := time.Duration(p.keepaliveInterval) * time.Second * 5 * 2
 
 	for {
 		if p.stopReceive {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		// TODO: read full packets!!!!
+
+		buf := make([]byte, 1220) // Max packet size (header + payload)
+
+		// Set read deadline for the connection
+		err := (*p.conn).SetReadDeadline(time.Now().Add(readTimeout))
+		if err != nil {
+			p.log().Errorf("Failed to set read deadline (timeout: %d): %v", readTimeout, err)
+			go p.Reset()
+			return
+		}
+
 		bytesRead, err := (*p.conn).Read(buf)
 		if p.GetState() == CLOSED || p.GetState() == RETRY {
 			return
 		}
+
+		// Handle read errors
 		if err != nil {
-			if err == io.EOF {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				p.log().Errorf("Read timeout (%d), resetting connection", readTimeout)
+			} else if err == io.EOF {
 				p.log().Infof("Connection closed by peer")
+			} else {
+				p.log().Errorf("Error reading from socket: %v", err)
+			}
+			go p.Reset()
+			return
+		}
+
+		// Accumulate the received bytes
+		pktBuf = append(pktBuf, buf[:bytesRead]...)
+
+		// Process all complete packets in the buffer
+		for {
+			if len(pktBuf) < 4 {
+				// Not enough data to read the 4-byte header
+				break
+			}
+
+			// Extract the header fields
+			pktVersion := pktBuf[0]
+			pktLen := uint16(pktBuf[1])<<8 + uint16(pktBuf[2])
+			pktType := MESSAGE_TYPE(pktBuf[3])
+			totalPktLen := int(pktLen) + 4 // Full packet size (header + payload)
+
+			// Sanity checks
+			if pktVersion != 1 {
+				p.log().Errorf("Unsupported protocol version: %d", pktVersion)
 				go p.Reset()
 				return
 			}
-			logrus.Errorf("Error reading from socket: %v", err)
-			go p.Reset()
-			return
-		}
-		if bytesRead >= len(buf) {
-			p.log().Warningf("too many messages in inbound queue. Closing connection.")
-			go p.Reset()
-			return
-		}
+			if pktLen > 1188 {
+				p.log().Errorf("Payload length exceeds limit: %d", pktLen)
+				go p.Reset()
+				return
+			}
 
-		pktStart := 0
+			if len(pktBuf) < totalPktLen {
+				// Incomplete packet, wait for more data
+				break
+			}
 
-	parsePacket:
-		pktVersion := buf[pktStart]
-		switch pktVersion {
-		case 1:
-			pktLen := uint16(buf[pktStart+1])<<8 + uint16(buf[pktStart+2])
-			pktType := MESSAGE_TYPE(buf[pktStart+3])
-			pktBytes := buf[pktStart+4 : pktStart+int(pktLen)+4]
+			// Extract the full packet
+			pkt := pktBuf[:totalPktLen]
+			pktBuf = pktBuf[totalPktLen:] // Remove processed packet from buffer
 
-			pktStart += 4 + int(pktLen)
+			// Extract the payload (protobuf message)
+			pktPayload := pkt[4:] // Skip 4-byte header
 
+			// Dispatch packet based on type
 			switch pktType {
 			case HELLO:
-				hello, err := deserializeHelloMsg(pktBytes)
+				hello, err := deserializeHelloMsg(pktPayload)
 				if err != nil {
 					p.log().Errorf("Cannot deserialize HELLO message: %v", err)
 					go p.Reset()
 					return
 				}
-
 				p.rxHello <- *hello
 
 			case KEEPALIVE:
 				p.rxKeepalive <- msgKeepalive{}
 
 			case SUBSCRIBE:
-				sub, err := deserializeSubscribeMsg(pktBytes)
+				sub, err := deserializeSubscribeMsg(pktPayload)
 				if err != nil {
 					p.log().Errorf("Cannot deserialize SUBSCRIBE message: %v", err)
 					go p.Reset()
 					return
 				}
-
 				p.rxSubscribe <- *sub
 
 			case UNSUBSCRIBE:
-				sub, err := deserializeUnsubscribeMsg(pktBytes)
+				unsub, err := deserializeUnsubscribeMsg(pktPayload)
 				if err != nil {
 					p.log().Errorf("Cannot deserialize UNSUBSCRIBE message: %v", err)
 					go p.Reset()
 					return
 				}
-
-				p.rxUnsubscribe <- *sub
+				p.rxUnsubscribe <- *unsub
 
 			case UPDATE:
-				upd, err := deserializeUpdateMsg(pktBytes)
+				upd, err := deserializeUpdateMsg(pktPayload)
 				if err != nil {
 					p.log().Errorf("Cannot deserialize UPDATE message: %v", err)
 					go p.Reset()
@@ -498,17 +539,10 @@ func (p *metalBondPeer) rxLoop() {
 				p.rxUpdate <- *upd
 
 			default:
-				p.log().Errorf("Unknown Packet received. Closing connection.")
+				p.log().Errorf("Unknown message type: %d. Closing connection.", pktType)
+				go p.Reset()
 				return
 			}
-		default:
-			p.log().Errorf("Incompatible Client version. Closing connection.")
-			go p.Reset()
-			return
-		}
-
-		if pktStart < bytesRead {
-			goto parsePacket
 		}
 	}
 }
@@ -599,11 +633,11 @@ func (p *metalBondPeer) processRxUnsubscribe(msg msgUnsubscribe) {
 			p.log().Errorf("Failed to remove subscriber: %v", err)
 		}
 
-		p.mtxSubscribedVNIs.RLock()
+		p.mtxSubscribedVNIs.Lock()
 		delete(p.subscribedVNIs, msg.VNI)
 		// Update subscription metric per peer
 		metricSubscriptionCount.WithLabelValues(p.id, p.remoteAddr).Dec()
-		p.mtxSubscribedVNIs.RUnlock()
+		p.mtxSubscribedVNIs.Unlock()
 	} else {
 		p.log().Errorf("Received Unsubscribe message in invalid state: %s", p.GetState().String())
 	}
@@ -656,8 +690,8 @@ func (p *metalBondPeer) Close() {
 
 func (p *metalBondPeer) Reset() {
 	p.log().Debugf("Reset")
-	p.mtxReset.RLock()
-	defer p.mtxReset.RUnlock()
+	p.mtxReset.Lock()
+	defer p.mtxReset.Unlock()
 
 	if p.GetState() == CLOSED {
 		p.log().Debug("State is closed")

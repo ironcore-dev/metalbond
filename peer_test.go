@@ -1,7 +1,10 @@
 package metalbond
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/ironcore-dev/metalbond/pb"
+	"google.golang.org/protobuf/proto"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -23,6 +26,105 @@ const (
 	clientRxChanDataUpdateCapacity = 50
 )
 
+var _ = Describe("RxLoop", func() {
+	var (
+		server net.Conn
+		client net.Conn
+		peer   *metalBondPeer
+	)
+
+	BeforeEach(func() {
+		server, client = net.Pipe() // Simulate TCP connection
+		peer = newTestMetalBondPeer(client)
+		peer.keepaliveInterval = 5
+		go peer.rxLoop()
+	})
+
+	AfterEach(func() {
+		_ = server.Close()
+		_ = client.Close()
+	})
+
+	Context("Packet Processing", func() {
+		It("should correctly receive a complete HELLO packet", func() {
+			pkt := createPacket(1, HELLO, mockHelloMessage()) // HELLO packet
+			_, err := server.Write(pkt)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(peer.rxHello).Should(Receive(), "Expected HELLO packet to be received")
+		})
+
+		It("should correctly handle fragmented packet reception", func() {
+			pkt := createPacket(1, SUBSCRIBE, mockSubscribeMessage()) // SUBSCRIBE packet
+			_, err := server.Write(pkt[:2])                           // Send header first
+			Expect(err).NotTo(HaveOccurred())
+			time.Sleep(500 * time.Millisecond)
+			_, err = server.Write(pkt[2:]) // Send the rest after a delay
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(peer.rxSubscribe).Should(Receive(), "Expected fragmented SUBSCRIBE packet to be reassembled")
+		})
+
+		It("should reset to CLOSED if oversized packet is received after handshake", func() {
+			peer.setState(ESTABLISHED) // Simulate successful handshake
+
+			pkt := createPacket(1, UPDATE, mockOversizedMessage()) // Oversized UPDATE packet
+			_, err := server.Write(pkt)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Second)
+			Eventually(func() ConnectionState {
+				return peer.GetState()
+			}).Should(Equal(CLOSED), "Expected connection to transition to CLOSED after oversized packet")
+		})
+
+		It("should reset to CLOSED on invalid protocol version", func() {
+			pkt := createPacket(2, HELLO, mockHelloMessage()) // Invalid version
+			_, err := server.Write(pkt)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Second)
+			Eventually(func() ConnectionState {
+				return peer.GetState()
+			}).Should(Equal(CLOSED), "Expected connection to transition to CLOSED after invalid version")
+		})
+
+		It("should reset on read timeout and transition to CLOSED", func() {
+			pkt := createPacket(1, HELLO, mockHelloMessage()) // Invalid version
+			_, err := server.Write(pkt)
+			Expect(err).NotTo(HaveOccurred())
+			peer.setState(ESTABLISHED) // Simulate successful handshake
+
+			time.Sleep(61 * time.Second) // Exceed 61-second timeout
+
+			Eventually(func() ConnectionState {
+				return peer.GetState()
+			}).Should(Equal(CLOSED), "Expected connection to reset on read timeout and transition to CLOSED")
+		})
+
+		It("should correctly process multiple packets in one read", func() {
+			pkt1 := createPacket(1, HELLO, mockHelloMessage())
+			pkt2 := createPacket(1, SUBSCRIBE, mockSubscribeMessage())
+			_, err := server.Write(append(pkt1, pkt2...)) // Send HELLO and SUBSCRIBE together
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(peer.rxHello).Should(Receive(), "Expected to receive HELLO packet")
+			Eventually(peer.rxSubscribe).Should(Receive(), "Expected to receive SUBSCRIBE packet")
+		})
+	})
+
+	Context("Keepalive Handling", func() {
+		It("should handle delayed KEEPALIVE response", func() {
+			pkt := createPacket(1, KEEPALIVE, mockKeepaliveMessage()) // KEEPALIVE packet
+			time.Sleep(20 * time.Second)                              // Simulate keepalive delay
+			_, err := server.Write(pkt)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(peer.rxKeepalive).Should(Receive(), "Expected delayed KEEPALIVE to be processed")
+		})
+	})
+})
+
 var _ = Describe("Peer", func() {
 
 	var (
@@ -35,7 +137,9 @@ var _ = Describe("Peer", func() {
 
 	BeforeEach(func() {
 		log.Info("----- START -----")
-		config := Config{}
+		config := Config{
+			KeepaliveInterval: 5,
+		}
 		dummyClient = NewDummyClient()
 
 		mbServer1 = NewMetalBond(config, dummyClient)
@@ -54,8 +158,31 @@ var _ = Describe("Peer", func() {
 		mbServer2.Shutdown()
 	})
 
+	It("should keepalive", func() {
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
+		localIP := net.ParseIP("127.0.0.2")
+		err := mbClient.AddPeer(serverAddress1, localIP.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(60 * time.Second)
+
+		clientAddr := getLocalAddr(mbClient, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		state, err := mbServer1.PeerState(clientAddr)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(state).To(Equal(ESTABLISHED))
+
+		mbClient.Shutdown()
+	})
+
 	It("should subscribe", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		localIP := net.ParseIP("127.0.0.2")
 		err := mbClient.AddPeer(serverAddress1, localIP.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
@@ -82,7 +209,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should reset", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -116,7 +245,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should reconnect", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -145,7 +276,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("metalbond timeout", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -185,7 +318,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("dummyClient timeout", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -220,7 +355,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should cleanup announcements on unsubscribe", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -268,14 +405,18 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should distribute routes if one peer is closed", func() {
-		mbClient1 := NewMetalBond(Config{}, dummyClient)
+		mbClient1 := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		localIP1 := net.ParseIP("127.0.0.2")
 		err := mbClient1.AddPeer(serverAddress1, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 		err = mbClient1.AddPeer(serverAddress2, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
-		mbClient2 := NewMetalBond(Config{}, dummyClient)
+		mbClient2 := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		localIP2 := net.ParseIP("127.0.0.3")
 		err = mbClient2.AddPeer(serverAddress1, localIP2.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
@@ -325,7 +466,9 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("should get routes for vni", func() {
-		mbClient := NewMetalBond(Config{}, dummyClient)
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -367,14 +510,18 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("multiple metalbond reconnect", func() {
-		mbClient1 := NewMetalBond(Config{}, dummyClient)
+		mbClient1 := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		localIP1 := net.ParseIP("127.0.0.2")
 		err := mbClient1.AddPeer(serverAddress1, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 		err = mbClient1.AddPeer(serverAddress2, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
-		mbClient2 := NewMetalBond(Config{}, dummyClient)
+		mbClient2 := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
 		localIP2 := net.ParseIP("127.0.0.3")
 		err = mbClient2.AddPeer(serverAddress1, localIP2.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
@@ -458,7 +605,9 @@ var _ = Describe("Peer", func() {
 
 			go func(index int) {
 				defer wg.Done()
-				mbClient := NewMetalBond(Config{}, dummyClient)
+				mbClient := NewMetalBond(Config{
+					KeepaliveInterval: 5,
+				}, dummyClient)
 				localIP := net.ParseIP("127.0.0.2")
 				localIP = incrementIPv4(localIP, index)
 				err := mbClient.AddPeer(serverAddress1, localIP.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
@@ -603,4 +752,62 @@ func incrementIPv4(ip net.IP, count int) net.IP {
 		}
 	}
 	return ip
+}
+
+func createPacket(version byte, msgType MESSAGE_TYPE, payload []byte) []byte {
+	pktLen := uint16(len(payload))
+	header := []byte{version, byte(pktLen >> 8), byte(pktLen & 0xFF), byte(msgType)}
+	return append(header, payload...)
+}
+
+// Properly serialize HELLO message
+func mockHelloMessage() []byte {
+	msg := &pb.Hello{
+		KeepaliveInterval: 30,
+		IsServer:          true,
+	}
+	serialized, _ := proto.Marshal(msg)
+	return serialized
+}
+
+// Properly serialize SUBSCRIBE message
+func mockSubscribeMessage() []byte {
+	msg := &pb.Subscription{
+		Vni: 200,
+	}
+	serialized, _ := proto.Marshal(msg)
+	return serialized
+}
+
+// Properly serialize KEEPALIVE message (empty payload)
+func mockKeepaliveMessage() []byte {
+	return []byte{} // KEEPALIVE doesn't need a payload
+}
+
+// Properly serialize an oversized message for testing
+func mockOversizedMessage() []byte {
+	return bytes.Repeat([]byte{0x55}, 1189) // Exceeds the 1188-byte limit
+}
+
+func newTestMetalBondPeer(conn net.Conn) *metalBondPeer {
+
+	config := Config{
+		KeepaliveInterval: 5,
+	}
+	dummyClient := NewDummyClient()
+
+	return &metalBondPeer{
+		conn:                     &conn,
+		txChanCapacity:           10,
+		rxChanEventCapacity:      10,
+		rxChanDataUpdateCapacity: 10,
+		rxHello:                  make(chan msgHello, 1),
+		rxKeepalive:              make(chan msgKeepalive, 1),
+		rxSubscribe:              make(chan msgSubscribe, 1),
+		rxUnsubscribe:            make(chan msgUnsubscribe, 1),
+		rxUpdate:                 make(chan msgUpdate, 1),
+		shutdown:                 make(chan bool, 1),
+		keepaliveStop:            make(chan bool, 1),
+		metalbond:                NewMetalBond(config, dummyClient),
+	}
 }
