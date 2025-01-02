@@ -67,6 +67,7 @@ type metalBondPeer struct {
 	stopReceive           bool
 	lastKeepaliveSent     time.Time
 	lastKeepaliveReceived time.Time
+	manuallyRemoved       bool
 }
 
 func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChanCapacity int, rxChanEventCapacity int, rxChanDataUpdateCapacity int, keepaliveInterval uint32, direction ConnectionDirection, metalbond *MetalBond) *metalBondPeer {
@@ -162,6 +163,26 @@ func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 		return err
 	}
 	return nil
+}
+
+// WaitTimeout waits for the peer's goroutines to exit,
+// but returns an error if that takes longer than "timeout".
+func (p *metalBondPeer) WaitTimeout(timeout time.Duration) error {
+	doneCh := make(chan struct{})
+
+	// Run p.wg.Wait() in a separate goroutine:
+	go func() {
+		p.wg.Wait()
+		close(doneCh)
+	}()
+
+	// Wait for doneCh or time out:
+	select {
+	case <-doneCh:
+		return nil // success: all goroutines have exited
+	case <-time.After(timeout):
+		return fmt.Errorf("WaitTimeout exceeded %v, goroutines still not exited", timeout)
+	}
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -693,6 +714,11 @@ func (p *metalBondPeer) Reset() {
 	p.mtxReset.Lock()
 	defer p.mtxReset.Unlock()
 
+	if p.manuallyRemoved {
+		// If we know this peer is manually removed, skip reconnect logic entirely.
+		return
+	}
+
 	if p.GetState() == CLOSED {
 		p.log().Debug("State is closed")
 		return
@@ -720,6 +746,12 @@ func (p *metalBondPeer) Reset() {
 		p.log().Infof("Closed. Waiting %s...", retry)
 
 		time.Sleep(retry)
+
+		// Double-check
+		if p.manuallyRemoved {
+			return
+		}
+
 		p.setState(CONNECTING)
 		p.log().Infof("Reconnecting...")
 

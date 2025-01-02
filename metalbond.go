@@ -84,24 +84,34 @@ func (m *MetalBond) AddPeer(addr, localIP string, txChanCapacity, rxChanEventCap
 
 func (m *MetalBond) RemovePeer(addr string) error {
 	m.log().Debugf("RemovePeer %s", addr)
-	m.unsafeRemovePeer(addr)
-	return nil
+	return m.unsafeRemovePeer(addr)
 }
 
-func (m *MetalBond) unsafeRemovePeer(addr string) {
+func (m *MetalBond) unsafeRemovePeer(addr string) error {
 	m.log().Infof("Removing peer %s", addr)
 	m.mtxPeers.RLock()
 	p, exists := m.peers[addr]
 	m.mtxPeers.RUnlock()
 	if !exists {
 		m.log().Errorf("Peer %s does not exist", addr)
-	} else {
-		p.Close()
-
-		m.mtxPeers.Lock()
-		delete(m.peers, addr)
-		m.mtxPeers.Unlock()
+		return nil
 	}
+
+	p.manuallyRemoved = true
+	p.Close() // signals all peer loops to exit
+
+	// Wait with a timeout of 30 seconds:
+	err := p.WaitTimeout(30 * time.Second)
+	if err != nil {
+		m.log().Errorf("Peer %s did not exit within 30s: %v", addr, err)
+		return err
+	}
+
+	m.mtxPeers.Lock()
+	delete(m.peers, addr)
+	m.mtxPeers.Unlock()
+
+	return nil
 }
 
 func (m *MetalBond) ResetPeer(addr string) {
@@ -403,9 +413,9 @@ func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest D
 	}
 
 	if hop.Type == pb.NextHopType_NAT {
-		m.log().Infof("Removed Received Route: VNI %d, Prefix: %s, NextHop: %s Type: %s PortFrom: %d PortTo: %d, from Peer: %s", vni, dest, hop, hop.Type.String(), hop.NATPortRangeFrom, hop.NATPortRangeTo, fromPeer)
+		m.log().Infof("Removed Received Route: VNI %d, Prefix: %s, NextHop: %s Type: %s PortFrom: %d PortTo: %d, Remaining %d, from Peer: %s", vni, dest, hop, hop.Type.String(), hop.NATPortRangeFrom, hop.NATPortRangeTo, remaining, fromPeer)
 	} else {
-		m.log().Infof("Removed Received Route: VNI %d, Prefix: %s, NextHop: %s Type: %s, from Peer: %s", vni, dest, hop, hop.Type.String(), fromPeer)
+		m.log().Infof("Removed Received Route: VNI %d, Prefix: %s, NextHop: %s Type: %s, Remaining %d, from Peer: %s", vni, dest, hop, hop.Type.String(), remaining, fromPeer)
 	}
 
 	if remaining == 0 {
