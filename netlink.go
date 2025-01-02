@@ -5,6 +5,7 @@ package metalbond
 
 import (
 	"fmt"
+	"github.com/ironcore-dev/metalbond/pb"
 	"net"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ type NetlinkClientConfig struct {
 	LinkName      string
 	IPv4Only      bool
 	PreferNetwork *net.IPNet
+	ExcludeTypes  map[pb.NextHopType]bool
 }
 
 func NewNetlinkClient(config NetlinkClientConfig, rtProto netlink.RouteProtocol) (*NetlinkClient, error) {
@@ -98,6 +100,12 @@ func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
 
 	if c.config.IPv4Only && dest.IPVersion != IPV4 {
 		log.Infof("Received non-IPv4 route will not be installed in kernel route table (IPv4-only mode)")
+		return nil
+	}
+
+	// Check if the route type is excluded
+	if _, excluded := c.config.ExcludeTypes[hop.Type]; excluded {
+		log.Infof("Excluding route of type %v to %s", hop.Type, dest.Prefix)
 		return nil
 	}
 

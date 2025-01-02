@@ -49,6 +49,7 @@ var CLI struct {
 		TxChanCapacity           int      `help:"Specifies the maximum number of outgoing messages that can be queued before blocking; controls the buffer size for outgoing messages."`
 		RxChanEventCapacity      int      `help:"Sets the buffer size for receiving HELLO and KEEPALIVE events; limits the number of concurrent event messages that can be processed."`
 		RxChanDataUpdateCapacity int      `help:"Defines the capacity for subscription and update messages (e.g., SUBSCRIBE, UNSUBSCRIBE, UPDATE); manages the message queue for data updates and subscriptions."`
+		ExcludeRouteType         []string `help:"Exclude routes by type. Use multiple times to exclude different types. e.g., --exclude-route-type=LOADBALANCER_TARGET --exclude-route-type=NAT"`
 	} `cmd:"" help:"Run MetalBond Client"`
 }
 
@@ -159,11 +160,13 @@ func main() {
 				rtProto = CLI.Client.RtProto
 			}
 
+			excludedTypes := parseExcludedRouteTypes(CLI.Client.ExcludeRouteType)
 			client, err = metalbond.NewNetlinkClient(metalbond.NetlinkClientConfig{
 				VNITableMap:   vnitablemap,
 				LinkName:      CLI.Client.Tun,
 				IPv4Only:      CLI.Client.IPv4only,
 				PreferNetwork: preferNetwork,
+				ExcludeTypes:  excludedTypes,
 			}, netlink.RouteProtocol(rtProto))
 
 			if err != nil {
@@ -312,4 +315,21 @@ func showActiveGoRoutines() {
 		log.Debugf("Active Go Routines: %d", runtime.NumGoroutine())
 		time.Sleep(10 * time.Second)
 	}
+}
+
+func parseExcludedRouteTypes(excluded []string) map[pb.NextHopType]bool {
+	excludedTypes := make(map[pb.NextHopType]bool)
+	for _, routeType := range excluded {
+		switch strings.ToUpper(routeType) {
+		case "STANDARD":
+			excludedTypes[pb.NextHopType_STANDARD] = true
+		case "NAT":
+			excludedTypes[pb.NextHopType_NAT] = true
+		case "LOADBALANCER_TARGET":
+			excludedTypes[pb.NextHopType_LOADBALANCER_TARGET] = true
+		default:
+			panic(fmt.Errorf("Unknown route type excluded: %s", routeType))
+		}
+	}
+	return excludedTypes
 }
