@@ -146,15 +146,20 @@ func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, recei
 		return fmt.Errorf("Nexthop does not exist"), 0
 	}
 
-	if _, exists := rt.routes[vni][destKey][nh][receivedFrom]; !exists {
-		return fmt.Errorf("ReceivedFrom does not exist"), 0
-	}
-
-	delete(rt.routes[vni][destKey][nh], receivedFrom)
-	left := len(rt.routes[vni][destKey][nh])
-
-	if left == 0 {
+	left := 0
+	if receivedFrom == nil {
 		delete(rt.routes[vni][destKey], nh)
+	} else {
+		if _, exists := rt.routes[vni][destKey][nh][receivedFrom]; !exists {
+			return fmt.Errorf("ReceivedFrom does not exist"), 0
+		}
+
+		delete(rt.routes[vni][destKey][nh], receivedFrom)
+		left = len(rt.routes[vni][destKey][nh])
+
+		if left == 0 {
+			delete(rt.routes[vni][destKey], nh)
+		}
 	}
 
 	if len(rt.routes[vni][destKey]) == 0 {

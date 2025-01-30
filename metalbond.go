@@ -265,6 +265,9 @@ func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error 
 		return fmt.Errorf("cannot remove route from the local announcement route table: %v", err)
 	}
 
+	// silently remove leftover from route table as a last resort
+	_, _ = m.routeTable.RemoveNextHop(vni, dest, hop, nil)
+
 	// TODO: Due to the internal complexity,
 	// the logic, regarding when/how nexthops or entire routes are removed from metalbond under the cases in which withdrawing or receiving deleting route messages,
 	// should be double-checked.
@@ -452,12 +455,12 @@ func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
 
 	m.log().Infof("Peer %s added Subscription to VNI %d", peer, vni)
 
-	// TODO: we're missing a read-lock on routeTable
 	for dest, hopToPeersMap := range m.routeTable.GetDestinationsByVNIWithPeer(vni) {
 		for hop, peers := range hopToPeersMap {
 			for _, peerFromList := range peers {
-				// Dont send the NAT routes back to the original peer which announced it
-				if peerFromList == peer && hop.Type == pb.NextHopType_NAT {
+				// don't send route back to the peer we got it from
+				// Except for the LB routes
+				if peerFromList == peer && hop.Type != pb.NextHopType_LOADBALANCER_TARGET {
 					continue
 				}
 				err := peer.SendUpdate(msgUpdate{

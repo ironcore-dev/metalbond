@@ -596,6 +596,50 @@ var _ = Describe("Peer", func() {
 		Expect(mbClient2Routes).To(Equal(0))
 	})
 
+	It("multiple metalbond announce and subscribe", func() {
+		mbClient1 := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
+		localIP1 := net.ParseIP("127.0.0.123")
+		err := mbClient1.AddPeer(serverAddress1, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient1.AddPeer(serverAddress2, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(5 * time.Second)
+		vni := VNI(200)
+
+		// prepare the route
+		startIP := net.ParseIP("100.64.0.0")
+		ip := incrementIPv4(startIP, 1)
+		addr, err := netip.ParseAddr(ip.String())
+		Expect(err).NotTo(HaveOccurred())
+		underlayRoute, err := netip.ParseAddr(fmt.Sprintf("b198:5b10:3880:fd32:fb80:80dd:46f7:%d", 1))
+		Expect(err).NotTo(HaveOccurred())
+		dest := Destination{
+			Prefix:    netip.PrefixFrom(addr, 32),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: underlayRoute,
+		}
+
+		err = mbClient1.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		// wait for the route to be received
+		time.Sleep(3 * time.Second)
+
+		err = mbClient1.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(2 * time.Second)
+
+		mbClient1Routes := len(mbClient1.routeTable.routes[vni][dest.String()][nextHop])
+		Expect(mbClient1Routes).To(Equal(0))
+	})
+
 	It("should announce", func() {
 		totalClients := 600
 		var wg sync.WaitGroup
