@@ -410,9 +410,13 @@ func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Dest
 }
 
 func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
-	err, remaining := m.routeTable.RemoveNextHop(vni, dest, hop, fromPeer)
-	if err != nil {
-		return fmt.Errorf("Cannot remove route from route table: %v", err)
+	var err error
+	remaining := 0
+	if m.routeTable.NextHopExists(vni, dest, hop, fromPeer) {
+		err, remaining = m.routeTable.RemoveNextHop(vni, dest, hop, fromPeer)
+		if err != nil {
+			return fmt.Errorf("Cannot remove route from route table: %v", err)
+		}
 	}
 
 	if hop.Type == pb.NextHopType_NAT {
