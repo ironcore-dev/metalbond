@@ -465,6 +465,58 @@ var _ = Describe("Peer", func() {
 		Expect(mbClient2Routes).To(Equal(1))
 	})
 
+	It("should remove properly", func() {
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 5,
+		}, dummyClient)
+		err := mbClient.AddPeer(serverAddress1, "127.0.0.2", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientAddr := getLocalAddr(mbClient, "")
+		Expect(clientAddr).NotTo(Equal(""))
+
+		Expect(waitForPeerState(mbServer1, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+
+		vni := VNI(200)
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(mbClient.IsSubscribed(vni)).To(BeTrue())
+
+		// prepare the route
+		startIP := net.ParseIP("100.64.0.0")
+		ip := incrementIPv4(startIP, 1)
+		addr, err := netip.ParseAddr(ip.String())
+		Expect(err).NotTo(HaveOccurred())
+		underlayRoute, err := netip.ParseAddr(fmt.Sprintf("b198:5b10:3880:fd32:fb80:80dd:46f7:%d", 1))
+		Expect(err).NotTo(HaveOccurred())
+		dest := Destination{
+			Prefix:    netip.PrefixFrom(addr, 32),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: underlayRoute,
+		}
+
+		err = mbClient.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		// wait for the route to be received
+		time.Sleep(3 * time.Second)
+
+		err = mbClient.GetRoutesForVni(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Close the keepalive
+		mbServer1.Shutdown()
+		mbServer1.peers[clientAddr].Close()
+		time.Sleep(10 * time.Second)
+
+		err = mbClient.RemovePeer(serverAddress1)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	It("should get routes for vni", func() {
 		mbClient := NewMetalBond(Config{
 			KeepaliveInterval: 5,
@@ -600,7 +652,7 @@ var _ = Describe("Peer", func() {
 		mbClient1 := NewMetalBond(Config{
 			KeepaliveInterval: 5,
 		}, dummyClient)
-		localIP1 := net.ParseIP("127.0.0.123")
+		localIP1 := net.ParseIP("127.0.0.2")
 		err := mbClient1.AddPeer(serverAddress1, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 		err = mbClient1.AddPeer(serverAddress2, localIP1.String(), clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)

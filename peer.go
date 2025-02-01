@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,16 +42,17 @@ type metalBondPeer struct {
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
 
-	shutdown      chan bool
-	keepaliveStop chan bool
-	txChan        chan []byte
-	txChanClose   chan bool
-	rxHello       chan msgHello
-	rxKeepalive   chan msgKeepalive
-	rxSubscribe   chan msgSubscribe
-	rxUnsubscribe chan msgUnsubscribe
-	rxUpdate      chan msgUpdate
-	wg            sync.WaitGroup
+	shutdown        chan bool
+	keepaliveStop   chan bool
+	txChan          chan []byte
+	txChanClose     chan bool
+	rxHello         chan msgHello
+	rxKeepalive     chan msgKeepalive
+	rxSubscribe     chan msgSubscribe
+	rxUnsubscribe   chan msgUnsubscribe
+	rxUpdate        chan msgUpdate
+	wg              sync.WaitGroup
+	resetInProgress int32
 
 	txChanCapacity           int
 	rxChanEventCapacity      int
@@ -322,17 +324,14 @@ func (p *metalBondPeer) handle() {
 	p.rxUnsubscribe = make(chan msgUnsubscribe, p.rxChanDataUpdateCapacity)
 	p.rxUpdate = make(chan msgUpdate, p.rxChanDataUpdateCapacity)
 
-	// outgoing connections still need to be established. pconn is nil.
+	// Outgoing connections still need to be established.
+	// p.conn is nil until we get a successful connection.
 	for p.conn == nil {
-
 		select {
 		case <-p.shutdown:
 			p.cleanup()
-
-			// exit handle() thread
 			return
 		default:
-			// proceed
 		}
 
 		var err error
@@ -347,7 +346,7 @@ func (p *metalBondPeer) handle() {
 
 		remoteAddr, err := net.ResolveTCPAddr("tcp", p.remoteAddr)
 		if err != nil {
-			p.log().Errorf("Error resolving remove address: %s", err)
+			p.log().Errorf("Error resolving remote address: %s", err)
 			return
 		}
 
@@ -355,16 +354,22 @@ func (p *metalBondPeer) handle() {
 		if err != nil {
 			retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
 			logrus.Infof("Cannot connect to server - %v - retry in %v", err, retry)
-			time.Sleep(retry)
+			// Instead of blocking with time.Sleep, wait with select so shutdown can interrupt.
+			select {
+			case <-time.After(retry):
+			case <-p.shutdown:
+				p.cleanup()
+				return
+			}
 			continue
 		}
 
 		conn := net.Conn(tcpConn)
 		p.localAddr = conn.LocalAddr().String()
 		p.conn = &conn
-
 	}
 
+	// Start the rxLoop and txLoop goroutines.
 	go p.rxLoop()
 	go p.txLoop()
 
@@ -450,11 +455,16 @@ func (p *metalBondPeer) rxLoop() {
 			continue
 		}
 
+		// Check that the connection is valid before attempting to read
+		if p.conn == nil {
+			p.log().Error("p.conn is nil in rxLoop, exiting")
+			return
+		}
+
 		buf := make([]byte, 1220) // Max packet size (header + payload)
 
-		// Set read deadline for the connection
-		err := (*p.conn).SetReadDeadline(time.Now().Add(readTimeout))
-		if err != nil {
+		// Set read deadline on the connection
+		if err := (*p.conn).SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 			p.log().Errorf("Failed to set read deadline (timeout: %d): %v", readTimeout, err)
 			go p.Reset()
 			return
@@ -488,7 +498,7 @@ func (p *metalBondPeer) rxLoop() {
 				break
 			}
 
-			// Extract the header fields
+			// Extract header fields
 			pktVersion := pktBuf[0]
 			pktLen := uint16(pktBuf[1])<<8 + uint16(pktBuf[2])
 			pktType := MESSAGE_TYPE(pktBuf[3])
@@ -507,16 +517,16 @@ func (p *metalBondPeer) rxLoop() {
 			}
 
 			if len(pktBuf) < totalPktLen {
-				// Incomplete packet, wait for more data
+				// Incomplete packet; wait for more data.
 				break
 			}
 
-			// Extract the full packet
+			// Extract the full packet and remove it from the buffer.
 			pkt := pktBuf[:totalPktLen]
-			pktBuf = pktBuf[totalPktLen:] // Remove processed packet from buffer
+			pktBuf = pktBuf[totalPktLen:]
 
-			// Extract the payload (protobuf message)
-			pktPayload := pkt[4:] // Skip 4-byte header
+			// Extract the payload (protobuf message) skipping the 4-byte header.
+			pktPayload := pkt[4:]
 
 			// Dispatch packet based on type
 			switch pktType {
@@ -704,18 +714,43 @@ func (p *metalBondPeer) Close() {
 		p.setState(CLOSED)
 	}
 
+	// Force close the underlying connection to unblock any I/O operations.
+	if p.conn != nil {
+		err := (*p.conn).Close()
+		if err != nil {
+			p.log().Errorf("Failed to close connection in close: %v", err)
+		}
+	}
+
+	// Signal the goroutines to exit.
 	p.txChanClose <- true
 	p.shutdown <- true
 	p.keepaliveStop <- true
 }
 
 func (p *metalBondPeer) Reset() {
+	// Ensure that only one Reset runs at a time.
+	if !atomic.CompareAndSwapInt32(&p.resetInProgress, 0, 1) {
+		// Another reset is already in progress.
+		return
+	}
+	// Ensure that when Reset finishes, we mark it as not in progress.
+	defer atomic.StoreInt32(&p.resetInProgress, 0)
+
 	p.log().Debugf("Reset")
+
+	// Use the reset mutex to protect connection-related actions.
 	p.mtxReset.Lock()
-	defer p.mtxReset.Unlock()
+	// Force the underlying TCP connection to close immediately.
+	if p.conn != nil {
+		if err := (*p.conn).Close(); err != nil {
+			p.log().Errorf("Failed to close connection in reset: %v", err)
+		}
+	}
+	p.mtxReset.Unlock()
 
 	if p.manuallyRemoved {
-		// If we know this peer is manually removed, skip reconnect logic entirely.
+		// If this peer was manually removed, skip reconnect logic.
 		return
 	}
 
@@ -726,8 +761,7 @@ func (p *metalBondPeer) Reset() {
 
 	switch p.direction {
 	case INCOMING:
-		// incoming connections are closed by the server
-		// in order to avoid stale peer threads
+		// For incoming connections, simply close and remove the peer.
 		p.Close()
 		if err := p.metalbond.RemovePeer(p.remoteAddr); err != nil {
 			p.log().Errorf("Failed to remove peer: %v", err)
@@ -738,23 +772,29 @@ func (p *metalBondPeer) Reset() {
 		p.txChanClose <- true
 		p.shutdown <- true
 		p.keepaliveStop <- true
+
+		// Wait for all goroutines (rxLoop, txLoop, keepaliveLoop, etc.) to exit.
 		p.wg.Wait()
 
+		// Reinitialize the waitgroup to avoid reuse issues.
+		p.mtxReset.Lock()
 		p.conn = nil
 		p.localAddr = ""
+		p.wg = sync.WaitGroup{}
+		p.mtxReset.Unlock()
+
+		// Wait a bit before reconnecting.
 		retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
 		p.log().Infof("Closed. Waiting %s...", retry)
-
 		time.Sleep(retry)
 
-		// Double-check
+		// Check one more time whether the peer was manually removed.
 		if p.manuallyRemoved {
 			return
 		}
 
 		p.setState(CONNECTING)
 		p.log().Infof("Reconnecting...")
-
 		go p.handle()
 	}
 }
@@ -871,24 +911,35 @@ func (p *metalBondPeer) txLoop() {
 
 	for {
 		select {
-		case msg := <-p.txChan:
-			// Set a write deadline before each message
-			err := (*p.conn).SetWriteDeadline(time.Now().Add(writeTimeout))
-			if err != nil {
+		case msg, ok := <-p.txChan:
+			if !ok {
+				p.log().Info("txChan closed, exiting txLoop")
+				return
+			}
+			// Check that the connection is still valid
+			if p.conn == nil {
+				p.log().Error("p.conn is nil in txLoop, cannot write message")
+				continue
+			}
+			// Set a write deadline before sending the message
+			if err := (*p.conn).SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 				p.log().Errorf("Error setting write deadline: %v", err)
 				go p.Reset()
 				return
 			}
 
-			// Write the message
+			// Write the message to the connection
 			n, err := (*p.conn).Write(msg)
 			if n != len(msg) || err != nil {
 				p.log().Errorf("Could not transmit message completely: %v", err)
 				go p.Reset()
 			}
+
 		case <-p.txChanClose:
-			p.log().Infof("Closing TCP connection")
-			(*p.conn).Close()
+			p.log().Infof("Closing TCP connection in txLoop")
+			if p.conn != nil {
+				(*p.conn).Close()
+			}
 			return
 		}
 	}
