@@ -905,5 +905,6 @@ func newTestMetalBondPeer(conn net.Conn) *metalBondPeer {
 		shutdown:                 make(chan bool, 1),
 		keepaliveStop:            make(chan bool, 1),
 		metalbond:                NewMetalBond(config, dummyClient),
+		wg:                       &sync.WaitGroup{},
 	}
 }

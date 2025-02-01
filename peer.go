@@ -51,7 +51,7 @@ type metalBondPeer struct {
 	rxSubscribe     chan msgSubscribe
 	rxUnsubscribe   chan msgUnsubscribe
 	rxUpdate        chan msgUpdate
-	wg              sync.WaitGroup
+	wg              *sync.WaitGroup
 	resetInProgress int32
 
 	txChanCapacity           int
@@ -89,6 +89,7 @@ func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChan
 		rxChanEventCapacity:      rxChanEventCapacity,
 		rxChanDataUpdateCapacity: rxChanDataUpdateCapacity,
 		metalbond:                metalbond,
+		wg:                       &sync.WaitGroup{},
 	}
 
 	go peer.handle()
@@ -171,14 +172,12 @@ func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 // but returns an error if that takes longer than "timeout".
 func (p *metalBondPeer) WaitTimeout(timeout time.Duration) error {
 	doneCh := make(chan struct{})
-
-	// Run p.wg.Wait() in a separate goroutine:
+	// Capture the current waitgroup pointer.
+	currentWg := p.wg
 	go func() {
-		p.wg.Wait()
+		currentWg.Wait()
 		close(doneCh)
 	}()
-
-	// Wait for doneCh or time out:
 	select {
 	case <-doneCh:
 		return nil // success: all goroutines have exited
@@ -731,17 +730,13 @@ func (p *metalBondPeer) Close() {
 func (p *metalBondPeer) Reset() {
 	// Ensure that only one Reset runs at a time.
 	if !atomic.CompareAndSwapInt32(&p.resetInProgress, 0, 1) {
-		// Another reset is already in progress.
-		return
+		return // Another reset is in progress.
 	}
-	// Ensure that when Reset finishes, we mark it as not in progress.
 	defer atomic.StoreInt32(&p.resetInProgress, 0)
 
 	p.log().Debugf("Reset")
 
-	// Use the reset mutex to protect connection-related actions.
 	p.mtxReset.Lock()
-	// Force the underlying TCP connection to close immediately.
 	if p.conn != nil {
 		if err := (*p.conn).Close(); err != nil {
 			p.log().Errorf("Failed to close connection in reset: %v", err)
@@ -750,7 +745,6 @@ func (p *metalBondPeer) Reset() {
 	p.mtxReset.Unlock()
 
 	if p.manuallyRemoved {
-		// If this peer was manually removed, skip reconnect logic.
 		return
 	}
 
@@ -761,7 +755,6 @@ func (p *metalBondPeer) Reset() {
 
 	switch p.direction {
 	case INCOMING:
-		// For incoming connections, simply close and remove the peer.
 		p.Close()
 		if err := p.metalbond.RemovePeer(p.remoteAddr); err != nil {
 			p.log().Errorf("Failed to remove peer: %v", err)
@@ -773,22 +766,21 @@ func (p *metalBondPeer) Reset() {
 		p.shutdown <- true
 		p.keepaliveStop <- true
 
-		// Wait for all goroutines (rxLoop, txLoop, keepaliveLoop, etc.) to exit.
+		// Wait for all goroutines (rxLoop, txLoop, etc.) to exit.
 		p.wg.Wait()
 
-		// Reinitialize the waitgroup to avoid reuse issues.
+		// Now that all previous goroutines have finished,
+		// replace the waitgroup with a new instance.
 		p.mtxReset.Lock()
 		p.conn = nil
 		p.localAddr = ""
-		p.wg = sync.WaitGroup{}
+		p.wg = &sync.WaitGroup{} // <== new waitgroup for the new session
 		p.mtxReset.Unlock()
 
-		// Wait a bit before reconnecting.
 		retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
 		p.log().Infof("Closed. Waiting %s...", retry)
 		time.Sleep(retry)
 
-		// Check one more time whether the peer was manually removed.
 		if p.manuallyRemoved {
 			return
 		}
