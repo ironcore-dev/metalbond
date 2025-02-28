@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
@@ -16,6 +17,9 @@ import (
 	"net/netip"
 
 	"github.com/alecthomas/kong"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 	"github.com/ironcore-dev/metalbond"
 	"github.com/ironcore-dev/metalbond/pb"
 	log "github.com/sirupsen/logrus"
@@ -39,7 +43,142 @@ var CLI struct {
 		IPv4only      bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
 		Keepalive     uint32   `help:"Keepalive Interval"`
 		Http          string   `help:"HTTP Server listen address. e.g. [::]:4712"`
+		ARPSpoof      struct {
+			Interface string `help:"Network interface for ARP spoofing (e.g., eth0)"`
+			IPPrefix  string `help:"IP prefix to spoof ARP responses for (e.g., 192.168.1.0/24)"`
+		} `embed:"" prefix:"arp-spoof-"`
 	} `cmd:"" help:"Run MetalBond Client"`
+}
+
+// ARPSpoofer holds the state for ARP spoofing
+type ARPSpoofer struct {
+	iface     string
+	handle    *pcap.Handle
+	mac       net.HardwareAddr
+	ipNetwork *net.IPNet
+	stopChan  chan struct{}
+}
+
+// NewARPSpoofer creates a new ARP spoofer for the given interface and IP prefix
+func NewARPSpoofer(iface, ipPrefix string) (*ARPSpoofer, error) {
+	// Parse IP prefix
+	_, ipNet, err := net.ParseCIDR(ipPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("invalid IP prefix: %v", err)
+	}
+
+	// Get interface info
+	netIface, err := net.InterfaceByName(iface)
+	if err != nil {
+		return nil, fmt.Errorf("interface not found: %v", err)
+	}
+
+	// Open pcap handle for the interface
+	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open interface: %v", err)
+	}
+
+	// Set BPF filter to only capture ARP packets
+	if err := handle.SetBPFFilter("arp"); err != nil {
+		handle.Close()
+		return nil, fmt.Errorf("failed to set BPF filter: %v", err)
+	}
+
+	return &ARPSpoofer{
+		iface:     iface,
+		handle:    handle,
+		mac:       netIface.HardwareAddr,
+		ipNetwork: ipNet,
+		stopChan:  make(chan struct{}),
+	}, nil
+}
+
+// Start begins the ARP spoofing process
+func (a *ARPSpoofer) Start() {
+	log.Infof("Starting ARP spoofing on interface %s for IP range %s", a.iface, a.ipNetwork.String())
+	log.Infof("Using MAC address: %s", a.mac.String())
+
+	go func() {
+		packetSource := gopacket.NewPacketSource(a.handle, a.handle.LinkType())
+		for {
+			select {
+			case <-a.stopChan:
+				return
+			case packet := <-packetSource.Packets():
+				a.handlePacket(packet)
+			}
+		}
+	}()
+}
+
+// handlePacket processes captured ARP packets
+func (a *ARPSpoofer) handlePacket(packet gopacket.Packet) {
+	arpLayer := packet.Layer(layers.LayerTypeARP)
+	if arpLayer == nil {
+		return
+	}
+
+	arp := arpLayer.(*layers.ARP)
+	// Only process ARP requests
+	if arp.Operation != layers.ARPRequest {
+		return
+	}
+
+	// Convert target IP to net.IP for CIDR check
+	targetIP := net.IP(arp.DstProtAddress)
+
+	// Check if the target IP is in our spoofing range
+	if !a.ipNetwork.Contains(targetIP) {
+		return
+	}
+
+	// Craft ARP reply
+	eth := layers.Ethernet{
+		SrcMAC:       a.mac,
+		DstMAC:       net.HardwareAddr(arp.SourceHwAddress),
+		EthernetType: layers.EthernetTypeARP,
+	}
+
+	arpReply := layers.ARP{
+		AddrType:          arp.AddrType,
+		Protocol:          arp.Protocol,
+		HwAddressSize:     arp.HwAddressSize,
+		ProtAddressSize:   arp.ProtAddressSize,
+		Operation:         layers.ARPReply,
+		SourceHwAddress:   a.mac,
+		SourceProtAddress: arp.DstProtAddress,
+		DstHwAddress:      arp.SourceHwAddress,
+		DstProtAddress:    arp.SourceProtAddress,
+	}
+
+	// Serialize and send the packet
+	buffer := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		FixLengths:       true,
+		ComputeChecksums: true,
+	}
+
+	if err := gopacket.SerializeLayers(buffer, opts, &eth, &arpReply); err != nil {
+		log.Errorf("Failed to serialize ARP reply: %v", err)
+		return
+	}
+
+	if err := a.handle.WritePacketData(buffer.Bytes()); err != nil {
+		log.Errorf("Failed to send ARP reply: %v", err)
+		return
+	}
+
+	log.Debugf("Sent ARP reply for %s to %s",
+		net.IP(arp.DstProtAddress).String(),
+		net.IP(arp.SourceProtAddress).String())
+}
+
+// Stop terminates the ARP spoofing process
+func (a *ARPSpoofer) Stop() {
+	close(a.stopChan)
+	a.handle.Close()
+	log.Infof("ARP spoofing stopped")
 }
 
 func main() {
@@ -138,6 +277,20 @@ func main() {
 		if len(CLI.Client.Http) > 0 {
 			if err := m.StartHTTPServer(CLI.Client.Http); err != nil {
 				panic(fmt.Errorf("failed to start http server: %v", err))
+			}
+		}
+
+		// Start ARP spoofing if both interface and IP prefix are provided
+		var arpSpoofer *ARPSpoofer
+		if CLI.Client.ARPSpoof.Interface != "" && CLI.Client.ARPSpoof.IPPrefix != "" {
+			log.Infof("Initializing ARP spoofing on interface %s for IP range %s",
+				CLI.Client.ARPSpoof.Interface, CLI.Client.ARPSpoof.IPPrefix)
+
+			arpSpoofer, err = NewARPSpoofer(CLI.Client.ARPSpoof.Interface, CLI.Client.ARPSpoof.IPPrefix)
+			if err != nil {
+				log.Warnf("Failed to initialize ARP spoofing: %v", err)
+			} else {
+				arpSpoofer.Start()
 			}
 		}
 
@@ -242,6 +395,11 @@ func main() {
 		cint := make(chan os.Signal, 1)
 		signal.Notify(cint, os.Interrupt)
 		<-cint
+
+		// Stop ARP spoofing if it was started
+		if arpSpoofer != nil {
+			arpSpoofer.Stop()
+		}
 
 		m.Shutdown()
 
