@@ -7,7 +7,6 @@ on:
   push:
     branches:
     - master
-    - feature/arp_spoofer
     tags:
     - v*
     paths-ignore:
@@ -64,6 +63,7 @@ jobs:
         endpoint: builders # self-hosted
 
     - name: Login to GHCR
+      if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
@@ -90,7 +90,7 @@ jobs:
         context: .
         build-args: |
           METALBOND_VERSION=${{ env.METALBOND_VERSION }}
-        platforms: linux/amd64 #TODO Add arm64 support
-        push: true
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
