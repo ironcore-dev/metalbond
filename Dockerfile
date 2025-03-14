@@ -22,19 +22,28 @@ COPY html html
 COPY pb pb
 COPY *.go ./
 
+COPY extra/arp_spoofer arp_spoofer
+
 ARG TARGETOS
 ARG TARGETARCH
 
-# Build
+# Build MetalBond
 ARG METALBOND_VERSION
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
-    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$METALBOND_VERSION" -o metalbond cmd/cmd.go
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$METALBOND_VERSION" -o metalbond cmd/cmd.go
+
+# Build ARP Spoofer
+WORKDIR /workspace/arp_spoofer
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X main.version=$METALBOND_VERSION" -o ../spoofer main.go
 
 FROM debian:bullseye-slim
 
 RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping libpcap-dev && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/metalbond /usr/sbin/metalbond
 COPY --from=builder /workspace/html /usr/share/metalbond/html
+COPY --from=builder /workspace/spoofer /usr/sbin/spoofer
 
 RUN echo -e "254\tmetalbond" >> "/etc/iproute2/rt_protos"
