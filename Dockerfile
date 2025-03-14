@@ -22,7 +22,7 @@ COPY html html
 COPY pb pb
 COPY *.go ./
 
-COPY extra/arp_spoofer arp_spoofer
+COPY extras/arp_spoofer arp_spoofer
 
 ARG TARGETOS
 ARG TARGETARCH
