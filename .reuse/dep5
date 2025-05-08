@@ -10,6 +10,7 @@ Files:
   .github/*
   .gitignore
   .golangci.yaml
+  .vscode/settings.json
   Dockerfile
   Makefile
   go.mod
@@ -21,6 +22,9 @@ Files:
   html/*
   pb/metalbond.pb.go
   pb/metalbond.proto
+  extras/arp_spoofer/Makefile
+  extras/arp_spoofer/go.mod
+  extras/arp_spoofer/go.sum
 Copyright: 2023 SAP SE or an SAP affiliate company and IronCore contributors
 License: Apache-2.0
 
