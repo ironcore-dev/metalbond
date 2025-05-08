@@ -15,9 +15,6 @@ Files:
   Makefile
   go.mod
   go.sum
-  extras/Makefile
-  extras/go.mod
-  extras/go.sum
   debian/*
   html/*
   pb/metalbond.pb.go
