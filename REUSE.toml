@@ -1,0 +1,37 @@
+version = 1
+SPDX-PackageName = "metalbond"
+SPDX-PackageSupplier = "IronCore authors <ospo@sap.com>"
+SPDX-PackageDownloadLocation = "https://github.com/ironcore-dev/metalbond"
+
+
+[[annotations]]
+path = [
+    ".github/**",
+    ".gitignore",
+    ".golangci.yaml",
+    ".vscode/settings.json",
+    "Dockerfile",
+    "Makefile",
+    "go.mod",
+    "go.sum",
+    "debian/**",
+    "html/**",
+    "pb/metalbond.pb.go",
+    "pb/metalbond.proto",
+    "extras/arp_spoofer/Makefile",
+    "extras/arp_spoofer/go.mod",
+    "extras/arp_spoofer/go.sum"
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2023 SAP SE or an SAP affiliate company and IronCore contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+    "docs/**",
+    "*README.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2023 SAP SE or an SAP affiliate company and IronCore contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
