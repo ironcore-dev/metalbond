@@ -15,15 +15,18 @@ import (
 const METALBOND_RT_PROTO netlink.RouteProtocol = 254
 
 type NetlinkClient struct {
-	config    NetlinkClientConfig
-	tunDevice netlink.Link
-	mtx       sync.Mutex
+	config     NetlinkClientConfig
+	tunDevice  netlink.Link
+	mtx        sync.Mutex
+	routeTable routeTable
+	mbp        *metalBondPeer
 }
 
 type NetlinkClientConfig struct {
-	VNITableMap map[VNI]int
-	LinkName    string
-	IPv4Only    bool
+	VNITableMap   map[VNI]int
+	LinkName      string
+	IPv4Only      bool
+	PreferNetwork *net.IPNet
 }
 
 func NewNetlinkClient(config NetlinkClientConfig) (*NetlinkClient, error) {
@@ -36,8 +39,10 @@ func NewNetlinkClient(config NetlinkClientConfig) (*NetlinkClient, error) {
 	// to clean up old, stale routes installed by a prior metalbond client instance
 
 	return &NetlinkClient{
-		config:    config,
-		tunDevice: link,
+		config:     config,
+		tunDevice:  link,
+		routeTable: newRouteTable(),
+		mbp:        &metalBondPeer{},
 	}, nil
 }
 
@@ -60,21 +65,26 @@ func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
 		return fmt.Errorf("cannot parse destination prefix: %v", err)
 	}
 
-	encap := netlink.IP6tnlEncap{
-		Dst: net.ParseIP(hop.TargetAddress.String()),
-		Src: net.ParseIP("::"), // what source ip to put here? Metalbond object, m, does not contain this info yet.
+	err = c.routeTable.AddNextHop(vni, dest, hop, c.mbp)
+	if err != nil {
+		return fmt.Errorf("cannot add route to internal table vni: %d dest: %s hop: %s error: %v", vni, dest, hop, err)
 	}
 
 	route := &netlink.Route{
-		LinkIndex: c.tunDevice.Attrs().Index,
-		Dst:       dst,
-		Encap:     &encap,
-		Table:     table,
-		Protocol:  METALBOND_RT_PROTO,
+		Dst:      dst,
+		Table:    table,
+		Protocol: METALBOND_RT_PROTO,
 	} // by default, the route is already installed into the kernel table without explicite specification
 
-	if err := netlink.RouteAdd(route); err != nil {
-		return fmt.Errorf("cannot add route to %s (table %d) to kernel: %v", dest, table, err)
+	multiPath := []*netlink.NexthopInfo{}
+	for _, nextHop := range c.routeTable.GetNextHopsByDestination(vni, dest) {
+		nexthopInfo := c.createNexthopInfo(nextHop)
+		multiPath = append(multiPath, nexthopInfo)
+	}
+
+	route.MultiPath = multiPath
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("cannot replace ecmp route to %s (table %d) to kernel: %v", dest, table, err)
 	}
 
 	return nil
@@ -98,22 +108,47 @@ func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) erro
 		return fmt.Errorf("cannot parse destination prefix: %v", err)
 	}
 
-	encap := netlink.IP6tnlEncap{
-		Dst: net.ParseIP(hop.TargetAddress.String()),
-		Src: net.ParseIP("::"), // what source ip to put here? Metalbond object, m, does not contain this info yet.
-	}
-
 	route := &netlink.Route{
-		LinkIndex: c.tunDevice.Attrs().Index,
-		Dst:       dst,
-		Encap:     &encap,
-		Table:     table,
-		Protocol:  METALBOND_RT_PROTO,
+		Dst:      dst,
+		Table:    table,
+		Protocol: METALBOND_RT_PROTO,
 	} // by default, the route is already installed into the kernel table without explicite specification
 
-	if err := netlink.RouteDel(route); err != nil {
-		return fmt.Errorf("cannot remove route to %s (table %d) from kernel: %v", dest, table, err)
+	err, _ = c.routeTable.RemoveNextHop(vni, dest, hop, c.mbp)
+	if err != nil {
+		return fmt.Errorf("cannot add route to internal table vni: %d dest: %s hop: %s error: %v", vni, dest, hop, err)
+	}
+
+	multiPath := []*netlink.NexthopInfo{}
+	for _, nextHop := range c.routeTable.GetNextHopsByDestination(vni, dest) {
+		nexthopInfo := c.createNexthopInfo(nextHop)
+		multiPath = append(multiPath, nexthopInfo)
+	}
+
+	if len(multiPath) == 0 {
+		route.LinkIndex = c.tunDevice.Attrs().Index
+		if err := netlink.RouteDel(route); err != nil {
+			return fmt.Errorf("cannot remove route to %s (table %d) from kernel: %v", dest, table, err)
+		}
+	} else {
+		route.MultiPath = multiPath
+		if err := netlink.RouteReplace(route); err != nil {
+			return fmt.Errorf("cannot replace ecmp route to %s (table %d) to kernel: %v", dest, table, err)
+		}
 	}
 
 	return nil
+}
+
+func (c *NetlinkClient) createNexthopInfo(nextHop NextHop) *netlink.NexthopInfo {
+	encap := netlink.IP6tnlEncap{
+		Dst: net.ParseIP(nextHop.TargetAddress.String()),
+		Src: net.ParseIP("::"), // what source ip to put here? Metalbond object, m, does not contain this info yet.
+	}
+	nexthopInfo := &netlink.NexthopInfo{
+		LinkIndex: c.tunDevice.Attrs().Index,
+		Encap:     &encap,
+	}
+
+	return nexthopInfo
 }
