@@ -108,7 +108,7 @@ deb:
 
 .PHONY: unit-test
 unit-test:
-	go test -v
+	go test -v -ginkgo.label-filter=$(labels)
 
 .PHONY: fmt
 fmt: goimports ## Run goimports against code.

@@ -310,8 +310,20 @@ func (m *MetalBond) GetSubscribedVnis() []VNI {
 	return vnis
 }
 
+func (m *MetalBond) getHAPeerIfExists(target *metalBondPeer) *metalBondPeer {
+	m.mtxPeers.RLock()
+	defer m.mtxPeers.RUnlock()
+
+	for _, peer := range m.peers {
+		if peer.localAddr != target.localAddr {
+			return peer
+		}
+	}
+	return nil
+}
+
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
-	err := m.routeTable.AddNextHop(vni, dest, hop, fromPeer)
+	err := m.routeTable.AddNextHopHAAware(vni, dest, hop, fromPeer)
 	if err != nil {
 		return fmt.Errorf("Cannot add route to route table: %v", err)
 	}
@@ -326,16 +338,11 @@ func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Dest
 		m.log().Errorf("Could not distribute route to peers: %v", err)
 	}
 
-	err = m.client.AddRoute(vni, dest, hop)
-	if err != nil {
-		m.log().Errorf("Client.AddRoute call failed: %v", err)
-	}
-
 	return nil
 }
 
 func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
-	err, remaining := m.routeTable.RemoveNextHop(vni, dest, hop, fromPeer)
+	err, remaining := m.routeTable.RemoveNextHopHAAware(vni, dest, hop, fromPeer)
 	if err != nil {
 		return fmt.Errorf("Cannot remove route from route table: %v", err)
 	}
@@ -350,11 +357,6 @@ func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest D
 		if err := m.distributeRouteToPeers(REMOVE, vni, dest, hop, fromPeer); err != nil {
 			m.log().Errorf("Could not distribute route to peers: %v", err)
 		}
-	}
-
-	err = m.client.RemoveRoute(vni, dest, hop)
-	if err != nil {
-		m.log().Errorf("Client.RemoveRoute call failed: %v", err)
 	}
 
 	return nil
