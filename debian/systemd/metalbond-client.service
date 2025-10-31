@@ -1,6 +1,7 @@
 [Unit]
 Description=MetalBond Client
 After=network.target
+Requires=metalbond-tun.service
 
 [Service]
 Type=simple
