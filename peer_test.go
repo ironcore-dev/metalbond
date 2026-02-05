@@ -16,6 +16,41 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type TrackingClient struct {
+	mtx    sync.Mutex
+	routes map[VNI]map[Destination][]NextHop
+}
+
+func NewTrackingClient() *TrackingClient {
+	return &TrackingClient{
+		routes: make(map[VNI]map[Destination][]NextHop),
+	}
+}
+
+func (c *TrackingClient) AddRoute(vni VNI, dest Destination, nexthop NextHop) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.routes[vni] == nil {
+		c.routes[vni] = make(map[Destination][]NextHop)
+	}
+	c.routes[vni][dest] = append(c.routes[vni][dest], nexthop)
+	return nil
+}
+
+func (c *TrackingClient) RemoveRoute(vni VNI, dest Destination, nexthop NextHop) error {
+	return nil
+}
+
+func (c *TrackingClient) HasRoute(vni VNI, dest Destination) bool {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.routes[vni] == nil {
+		return false
+	}
+	_, exists := c.routes[vni][dest]
+	return exists
+}
+
 var _ = Describe("Peer", func() {
 
 	var (
@@ -340,3 +375,73 @@ func incrementIPv4(ip net.IP, count int) net.IP {
 	}
 	return ip
 }
+
+var _ = Describe("Route Filtering", func() {
+	var (
+		mbServer      *MetalBond
+		serverAddress string
+	)
+
+	BeforeEach(func() {
+		log.Info("----- START Route Filtering -----")
+		config := Config{}
+		mbServer = NewMetalBond(config, NewDummyClient())
+		serverAddress = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
+		err := mbServer.StartServer(serverAddress)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		mbServer.Shutdown()
+	})
+
+	It("should not install routes for destinations already announced", func() {
+		vni := VNI(100)
+
+		client1 := NewTrackingClient()
+		client2 := NewTrackingClient()
+
+		mbClient1 := NewMetalBond(Config{}, client1)
+		mbClient2 := NewMetalBond(Config{}, client2)
+
+		err := mbClient1.AddPeer(serverAddress, "127.0.0.2")
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient2.AddPeer(serverAddress, "127.0.0.3")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(waitForPeerState(mbClient1, serverAddress, ESTABLISHED)).To(BeTrue())
+		Expect(waitForPeerState(mbClient2, serverAddress, ESTABLISHED)).To(BeTrue())
+
+		err = mbClient1.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient2.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		dest := Destination{
+			Prefix:    netip.MustParsePrefix("0.0.0.0/0"),
+			IPVersion: IPV4,
+		}
+
+		nextHop1 := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: netip.MustParseAddr("fd00::1"),
+		}
+		nextHop2 := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: netip.MustParseAddr("fd00::2"),
+		}
+
+		err = mbClient1.AnnounceRoute(vni, dest, nextHop1)
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient2.AnnounceRoute(vni, dest, nextHop2)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(3 * time.Second)
+
+		Expect(client1.HasRoute(vni, dest)).To(BeFalse(), "client1 should not have installed route for destination it announces")
+		Expect(client2.HasRoute(vni, dest)).To(BeFalse(), "client2 should not have installed route for destination it announces")
+
+		mbClient1.Shutdown()
+		mbClient2.Shutdown()
+	})
+})
