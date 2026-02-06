@@ -284,7 +284,13 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	return nil
 }
 
-func (m *MetalBond) GetRoutesForVni(vni VNI) error {
+func (m *MetalBond) GetClient() Client {
+	return m.client
+}
+
+// This function re-adds routes, including announced and received ones
+func (m *MetalBond) AddRoutesForVni(vni VNI) error {
+	// re-add received routes for this VNI
 	for dest, hops := range m.routeTable.GetDestinationsByVNI(vni) {
 		for _, hop := range hops {
 			err := m.client.AddRoute(vni, dest, hop)
@@ -294,6 +300,17 @@ func (m *MetalBond) GetRoutesForVni(vni VNI) error {
 			}
 		}
 	}
+	// re-add announced routes for this VNI
+	for dest, hops := range m.myAnnouncements.GetDestinationsByVNI(vni) {
+		for _, hop := range hops {
+			err := m.client.AddRoute(vni, dest, hop)
+			if err != nil {
+				m.log().Errorf("Client.AddRoute call failed in Refill for myAnnouncements: %v", err)
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
