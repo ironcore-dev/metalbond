@@ -15,7 +15,7 @@ Please see the documentation in the [`/docs`](./docs) folder for more details.
 
 ## Licensing
 
-Copyright 2025 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](LICENSE) for
+Copyright 2025 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](/LICENSES) for
 copyright and license information. Detailed information including third-party components and their licensing/copyright
 information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/metalbond).
 
