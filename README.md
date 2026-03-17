@@ -13,16 +13,11 @@ Metalbond is a tool suite that manages routes for virtual private networking in 
 # Use and develop metalbond
 Please see the documentation in the [`/docs`](./docs) folder for more details.
 
-## License
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+## Licensing
 
-    http://www.apache.org/licenses/LICENSE-2.0
+Copyright 2025 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](/LICENSES) for
+copyright and license information. Detailed information including third-party components and their licensing/copyright
+information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/metalbond).
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+<p align="center"><img alt="Bundesministerium für Wirtschaft und Energie (BMWE)-EU funding logo" src="https://apeirora.eu/assets/img/BMWK-EU.png" width="400"/></p>
 
