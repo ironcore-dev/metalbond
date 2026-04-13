@@ -69,7 +69,7 @@ func (m *MetalBond) AddPeer(addr, localIP string) error {
 
 	m.log().Infof("Adding peer %s", addr)
 	if _, exists := m.peers[addr]; exists {
-		return fmt.Errorf("Peer already registered")
+		return fmt.Errorf("peer already registered")
 	}
 
 	m.peers[addr] = newMetalBondPeer(
@@ -114,7 +114,7 @@ func (m *MetalBond) PeerState(addr string) (ConnectionState, error) {
 		state := m.peers[addr].GetState()
 		return state, nil
 	} else {
-		return CLOSED, fmt.Errorf("Peer %s does not exist", addr)
+		return CLOSED, fmt.Errorf("peer %s does not exist", addr)
 	}
 }
 
@@ -126,14 +126,14 @@ func (m *MetalBond) Subscribe(vni VNI) error {
 	}()
 
 	if _, exists := m.mySubscriptions[vni]; exists {
-		return fmt.Errorf("Already subscribed to VNI %d", vni)
+		return fmt.Errorf("already subscribed to VNI %d", vni)
 	}
 
 	m.mySubscriptions[vni] = true
 
 	for _, p := range m.peers {
 		if err := p.Subscribe(vni); err != nil {
-			return fmt.Errorf("Could not subscribe to vni %d: %v", vni, err)
+			return fmt.Errorf("could not subscribe to vni %d: %v", vni, err)
 		}
 	}
 
@@ -156,7 +156,7 @@ func (m *MetalBond) Unsubscribe(vni VNI) error {
 	defer m.mtxMySubscriptions.Unlock()
 
 	if _, exists := m.mySubscriptions[vni]; !exists {
-		return fmt.Errorf("Already unsubscribed from VNI %d", vni)
+		return fmt.Errorf("already unsubscribed from VNI %d", vni)
 	}
 
 	for _, p := range m.peers {
@@ -168,7 +168,7 @@ func (m *MetalBond) Unsubscribe(vni VNI) error {
 		for dest, nhs := range m.routeTable.GetDestinationsByVNI(vni) {
 			for _, nh := range nhs {
 				if m.routeTable.NextHopExists(vni, dest, nh, p) {
-					if err, _ := m.routeTable.RemoveNextHop(vni, dest, nh, p); err != nil {
+					if _, err := m.routeTable.RemoveNextHop(vni, dest, nh, p); err != nil {
 						p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 					}
 				}
@@ -189,11 +189,11 @@ func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error 
 	m.log().Infof("Announcing VNI %d: %s via %s", vni, dest, hop)
 
 	if err := m.myAnnouncements.AddNextHop(vni, dest, hop, nil); err != nil {
-		return fmt.Errorf("Cannot announce route: %v", err)
+		return fmt.Errorf("cannot announce route: %v", err)
 	}
 
 	if err := m.distributeRouteToPeers(ADD, vni, dest, hop, nil); err != nil {
-		return fmt.Errorf("Could not distribute route to peers: %v", err)
+		return fmt.Errorf("could not distribute route to peers: %v", err)
 	}
 
 	return nil
@@ -203,7 +203,7 @@ func (m *MetalBond) WithdrawRoute(vni VNI, dest Destination, hop NextHop) error 
 
 	m.log().Infof("withdraw a route for VNI %d: %s via %s", vni, dest, hop)
 
-	err, remaining := m.myAnnouncements.RemoveNextHop(vni, dest, hop, nil)
+	remaining, err := m.myAnnouncements.RemoveNextHop(vni, dest, hop, nil)
 	if err != nil {
 		return fmt.Errorf("cannot remove route from the local announcement route table: %v", err)
 	}
@@ -312,7 +312,7 @@ func (m *MetalBond) GetSubscribedVnis() []VNI {
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
 	err := m.routeTable.AddNextHop(vni, dest, hop, fromPeer)
 	if err != nil {
-		return fmt.Errorf("Cannot add route to route table: %v", err)
+		return fmt.Errorf("cannot add route to route table: %v", err)
 	}
 
 	if hop.Type == pb.NextHopType_NAT {
@@ -334,9 +334,9 @@ func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Dest
 }
 
 func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
-	err, remaining := m.routeTable.RemoveNextHop(vni, dest, hop, fromPeer)
+	remaining, err := m.routeTable.RemoveNextHop(vni, dest, hop, fromPeer)
 	if err != nil {
-		return fmt.Errorf("Cannot remove route from route table: %v", err)
+		return fmt.Errorf("cannot remove route from route table: %v", err)
 	}
 
 	if hop.Type == pb.NextHopType_NAT {
@@ -370,7 +370,7 @@ func (m *MetalBond) addSubscriber(peer *metalBondPeer, vni VNI) error {
 	}
 
 	if _, exists := m.subscribers[vni][peer]; exists {
-		return fmt.Errorf("Peer is already subscribed!")
+		return fmt.Errorf("peer is already subscribed")
 	}
 
 	m.subscribers[vni][peer] = true
@@ -410,12 +410,12 @@ func (m *MetalBond) removeSubscriber(peer *metalBondPeer, vni VNI) error {
 	m.mtxSubscribers.RLock()
 	if _, exists := m.subscribers[vni]; !exists {
 		m.mtxSubscribers.RUnlock()
-		return fmt.Errorf("Peer is not subscribed!")
+		return fmt.Errorf("peer is not subscribed")
 	}
 
 	if _, exists := m.subscribers[vni][peer]; !exists {
 		m.mtxSubscribers.RUnlock()
-		return fmt.Errorf("Peer is not subscribed!")
+		return fmt.Errorf("peer is not subscribed")
 	}
 	m.mtxSubscribers.RUnlock()
 
@@ -423,7 +423,7 @@ func (m *MetalBond) removeSubscriber(peer *metalBondPeer, vni VNI) error {
 	peer.log().Infof("Removing all received nexthops from peer for vni %d", vni)
 	for dest, nhs := range peer.receivedRoutes.GetDestinationsByVNI(vni) {
 		for _, nh := range nhs {
-			if err, _ := peer.receivedRoutes.RemoveNextHop(vni, dest, nh, peer); err != nil {
+			if _, err := peer.receivedRoutes.RemoveNextHop(vni, dest, nh, peer); err != nil {
 				peer.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 			}
 
@@ -448,7 +448,7 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 	lis, err := net.Listen("tcp", listenAddress)
 	m.lis = &lis
 	if err != nil {
-		return fmt.Errorf("Cannot open TCP port: %v", err)
+		return fmt.Errorf("cannot open TCP port: %v", err)
 	}
 	m.isServer = true
 

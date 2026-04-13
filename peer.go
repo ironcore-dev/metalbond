@@ -91,10 +91,10 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 	p.log().Debugf("Subscribe to vni %d", vni)
 
 	if p.direction == INCOMING {
-		return fmt.Errorf("Cannot subscribe on incoming connection")
+		return fmt.Errorf("cannot subscribe on incoming connection")
 	}
 	if p.GetState() != ESTABLISHED {
-		return fmt.Errorf("Connection not ESTABLISHED")
+		return fmt.Errorf("connection not ESTABLISHED")
 	}
 
 	msg := msgSubscribe{
@@ -108,7 +108,7 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 	p.log().Debugf("Unsubscribe from vni %d", vni)
 
 	if p.direction == INCOMING {
-		return fmt.Errorf("Cannot unsubscribe on incoming connection")
+		return fmt.Errorf("cannot unsubscribe on incoming connection")
 	}
 
 	msg := msgUnsubscribe{
@@ -117,7 +117,7 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 
 	for dest, nhs := range p.receivedRoutes.GetDestinationsByVNI(vni) {
 		for _, nh := range nhs {
-			err, _ := p.receivedRoutes.RemoveNextHop(vni, dest, nh, p)
+			_, err := p.receivedRoutes.RemoveNextHop(vni, dest, nh, p)
 			if err != nil {
 				p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 			}
@@ -129,7 +129,7 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 
 func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 	if p.GetState() != ESTABLISHED {
-		return fmt.Errorf("Connection not ESTABLISHED")
+		return fmt.Errorf("connection not ESTABLISHED")
 	}
 
 	if err := p.sendMessage(upd); err != nil {
@@ -230,7 +230,7 @@ func (p *metalBondPeer) cleanup() {
 	for _, vni := range p.receivedRoutes.GetVNIs() {
 		for dest, nhs := range p.receivedRoutes.GetDestinationsByVNI(vni) {
 			for _, nh := range nhs {
-				err, _ := p.receivedRoutes.RemoveNextHop(vni, dest, nh, p)
+				_, err := p.receivedRoutes.RemoveNextHop(vni, dest, nh, p)
 				if err != nil {
 					p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 					return
@@ -539,7 +539,7 @@ func (p *metalBondPeer) processRxUpdate(msg msgUpdate) {
 			p.log().Errorf("Could not process received route UPDATE ADD: %v", err)
 		}
 	case REMOVE:
-		err, _ = p.receivedRoutes.RemoveNextHop(msg.VNI, msg.Destination, msg.NextHop, p)
+		_, err = p.receivedRoutes.RemoveNextHop(msg.VNI, msg.Destination, msg.NextHop, p)
 		if err != nil {
 			p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 			return
@@ -654,7 +654,7 @@ func (p *metalBondPeer) resetKeepaliveTimeout() {
 func (p *metalBondPeer) sendMessage(msg message) error {
 	p.log().Tracef("sendMessage")
 	if p.GetState() == CLOSED {
-		err := errors.New("State is closed")
+		err := errors.New("state is closed")
 		p.log().Debug(err)
 		return err
 	}
@@ -677,12 +677,12 @@ func (p *metalBondPeer) sendMessage(msg message) error {
 		msgType = UPDATE
 		p.log().Debugf("Sending UPDATE message")
 	default:
-		return fmt.Errorf("Unknown message type")
+		return fmt.Errorf("unknown message type")
 	}
 
 	msgBytes, err := msg.Serialize()
 	if err != nil {
-		return fmt.Errorf("Could not serialize message: %v", err)
+		return fmt.Errorf("could not serialize message: %v", err)
 	}
 
 	hdr := []byte{1, byte(len(msgBytes) >> 8), byte(len(msgBytes) % 256), byte(msgType)}
