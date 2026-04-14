@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/google/addlicense v1.2.0
-	github.com/onsi/ginkgo/v2 v2.28.0
+	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/vishvananda/netlink v1.3.1
