@@ -12,7 +12,7 @@ jobs:
         architecture: [ amd64, arm64 ]
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get Release
         id: get_release
