@@ -2,7 +2,7 @@
 IMG ?= controller:latest
 BUILDARGS ?=
 
-DEB_BUILD_CONTAINER ?= golang:1.20-bookworm
+DEB_BUILD_CONTAINER ?= golang:1.24-bookworm
 
 ifneq ("$(wildcard ./version)","")
 	METALBOND_VERSION ?= $(shell cat ./version)
