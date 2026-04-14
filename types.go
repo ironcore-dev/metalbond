@@ -138,11 +138,11 @@ func (m msgHello) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
@@ -170,11 +170,11 @@ func (msg msgSubscribe) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
@@ -193,11 +193,11 @@ func (msg msgUnsubscribe) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
@@ -224,7 +224,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case REMOVE:
 		pbmsg.Action = pb.Action_REMOVE
 	default:
-		return nil, fmt.Errorf("Invalid UPDATE action")
+		return nil, fmt.Errorf("invalid UPDATE action")
 	}
 
 	switch msg.Destination.IPVersion {
@@ -233,7 +233,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 	case IPV6:
 		pbmsg.Destination.IpVersion = pb.IPVersion_IPv6
 	default:
-		return nil, fmt.Errorf("Invalid Destination IP version")
+		return nil, fmt.Errorf("invalid Destination IP version")
 	}
 	pbmsg.Destination.Prefix = msg.Destination.Prefix.Addr().AsSlice()
 	pbmsg.Destination.PrefixLength = uint32(msg.Destination.Prefix.Bits())
@@ -249,11 +249,11 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 
 	msgBytes, err := proto.Marshal(&pbmsg)
 	if err != nil {
-		return nil, fmt.Errorf("Could not marshal message: %v", err)
+		return nil, fmt.Errorf("could not marshal message: %v", err)
 	}
 
 	if len(msgBytes) > 1188 {
-		return nil, fmt.Errorf("Message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
+		return nil, fmt.Errorf("message too long: %d bytes > maximum of 1188 bytes", len(msgBytes))
 	}
 
 	return msgBytes, nil
@@ -262,7 +262,7 @@ func (msg msgUpdate) Serialize() ([]byte, error) {
 func deserializeHelloMsg(pktBytes []byte) (*msgHello, error) {
 	pbmsg := &pb.Hello{}
 	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
+		return nil, fmt.Errorf("cannot unmarshal received packet, closing connection: %v", err)
 	}
 
 	return &msgHello{
@@ -273,7 +273,7 @@ func deserializeHelloMsg(pktBytes []byte) (*msgHello, error) {
 func deserializeSubscribeMsg(pktBytes []byte) (*msgSubscribe, error) {
 	pbmsg := &pb.Subscription{}
 	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
+		return nil, fmt.Errorf("cannot unmarshal received packet, closing connection: %v", err)
 	}
 
 	return &msgSubscribe{
@@ -284,7 +284,7 @@ func deserializeSubscribeMsg(pktBytes []byte) (*msgSubscribe, error) {
 func deserializeUnsubscribeMsg(pktBytes []byte) (*msgUnsubscribe, error) {
 	pbmsg := &pb.Subscription{}
 	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
+		return nil, fmt.Errorf("cannot unmarshal received packet, closing connection: %v", err)
 	}
 
 	return &msgUnsubscribe{
@@ -295,7 +295,7 @@ func deserializeUnsubscribeMsg(pktBytes []byte) (*msgUnsubscribe, error) {
 func deserializeUpdateMsg(pktBytes []byte) (*msgUpdate, error) {
 	pbmsg := &pb.Update{}
 	if err := proto.Unmarshal(pktBytes, pbmsg); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal received packet. Closing connection: %v", err)
+		return nil, fmt.Errorf("cannot unmarshal received packet, closing connection: %v", err)
 	}
 
 	action := ADD
@@ -314,7 +314,7 @@ func deserializeUpdateMsg(pktBytes []byte) (*msgUpdate, error) {
 
 	destIP, ok := netip.AddrFromSlice(pbmsg.Destination.Prefix)
 	if !ok {
-		return nil, fmt.Errorf("Invalid destination IP")
+		return nil, fmt.Errorf("invalid destination IP")
 	}
 	destination := Destination{
 		IPVersion: ipversion,
@@ -323,7 +323,7 @@ func deserializeUpdateMsg(pktBytes []byte) (*msgUpdate, error) {
 
 	nhAddr, ok := netip.AddrFromSlice(pbmsg.NextHop.TargetAddress)
 	if !ok {
-		return nil, fmt.Errorf("Invalid nexthop IP")
+		return nil, fmt.Errorf("invalid nexthop IP")
 	}
 	nexthop := NextHop{
 		TargetAddress:    nhAddr,
