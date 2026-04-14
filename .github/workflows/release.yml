@@ -29,6 +29,8 @@ jobs:
       version: ${{ needs.set_version.outputs.version }}
   publish_github:
     needs: [ set_version, build_deb ]
+    permissions:
+      contents: write
     uses: ./.github/workflows/publish-to-github-releases.yml
     with:
       version: ${{ needs.set_version.outputs.version }}
