@@ -86,6 +86,11 @@ func main() {
 		m.Shutdown()
 
 	case "client":
+		// Subscriptions and announcements are registered before peers are
+		// added. When a peer connects, it syncs both automatically. This
+		// ensures myAnnouncements is populated before any routes arrive,
+		// which is required for the loop-prevention check in
+		// addReceivedRoute.
 		log.Infof("Client")
 		log.Infof("  servers: %v", CLI.Client.Server)
 		var err error
@@ -139,32 +144,6 @@ func main() {
 			if err := m.StartHTTPServer(CLI.Client.Http); err != nil {
 				panic(fmt.Errorf("failed to start http server: %v", err))
 			}
-		}
-
-		for _, server := range CLI.Client.Server {
-			if err := m.AddPeer(server, ""); err != nil {
-				panic(fmt.Errorf("failed to add server: %v", err))
-			}
-		}
-
-		// Wait for all peers to connect
-		deadline := time.Now().Add(10 * time.Second)
-		for {
-			connected := true
-			for _, server := range CLI.Client.Server {
-				state, err := m.PeerState(server)
-				if err != nil || state != metalbond.ESTABLISHED {
-					connected = false
-					break
-				}
-			}
-			if connected {
-				break
-			}
-			if time.Now().After(deadline) {
-				panic(errors.New("timeout waiting to connect"))
-			}
-			time.Sleep(1 * time.Second)
 		}
 
 		for _, subscription := range CLI.Client.Subscribe {
@@ -236,6 +215,32 @@ func main() {
 			if err := m.AnnounceRoute(metalbond.VNI(vni), dest, hop); err != nil {
 				log.Fatalf("failed to announce route: %v", err)
 			}
+		}
+
+		for _, server := range CLI.Client.Server {
+			if err := m.AddPeer(server, ""); err != nil {
+				panic(fmt.Errorf("failed to add server: %v", err))
+			}
+		}
+
+		// Wait for all peers to connect
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			connected := true
+			for _, server := range CLI.Client.Server {
+				state, err := m.PeerState(server)
+				if err != nil || state != metalbond.ESTABLISHED {
+					connected = false
+					break
+				}
+			}
+			if connected {
+				break
+			}
+			if time.Now().After(deadline) {
+				panic(errors.New("timeout waiting to connect"))
+			}
+			time.Sleep(1 * time.Second)
 		}
 
 		// Wait for SIGINTs

@@ -327,6 +327,11 @@ func (m *MetalBond) GetSubscribedVnis() []VNI {
 }
 
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
+	if len(m.myAnnouncements.GetNextHopsByDestination(vni, dest)) > 0 {
+		m.log().Debugf("Skipping received route VNI %d %s via %s: we already announce this destination", vni, dest, hop)
+		return nil
+	}
+
 	err := m.routeTable.AddNextHop(vni, dest, hop, fromPeer)
 	if err != nil {
 		return fmt.Errorf("cannot add route to route table: %v", err)
