@@ -6,7 +6,7 @@ require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/google/addlicense v1.2.0
 	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/gomega v1.40.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/vishvananda/netlink v1.3.1
 	google.golang.org/protobuf v1.36.11
