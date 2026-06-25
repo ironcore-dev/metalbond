@@ -4,6 +4,7 @@
 package metalbond
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -40,14 +41,19 @@ func NewNetlinkClient(config NetlinkClientConfig) (*NetlinkClient, error) {
 		return nil, fmt.Errorf("cannot find tun device '%s': %v", config.LinkName, err)
 	}
 
-	// TODO: Remove all routes from route tables defined in config.VNITableMap with Protocol = METALBOND_RT_PROTO
-	// to clean up old, stale routes installed by a prior metalbond client instance
-
-	return &NetlinkClient{
+	c := &NetlinkClient{
 		config:    config,
 		tunDevice: link,
 		routes:    make(map[routeKey][]NextHop),
-	}, nil
+	}
+
+	// Ensure we have no stale routes in the route tables which were configured.
+	err = c.Cleanup()
+	if err != nil {
+		return nil, fmt.Errorf("unable to clean up stale routes: %w", err)
+	}
+
+	return c, nil
 }
 
 func (c *NetlinkClient) AddRoute(vni VNI, dest Destination, hop NextHop) error {
@@ -127,6 +133,35 @@ func (c *NetlinkClient) RemoveRoute(vni VNI, dest Destination, hop NextHop) erro
 	}
 
 	return nil
+}
+
+// Cleanup retrieves all routes that have been installed into one of the
+// configured tables and deletes them to prevent stale routes from lingering.
+func (c *NetlinkClient) Cleanup() error {
+	var errs []error
+	for _, table := range c.config.VNITableMap {
+		routes, err := netlink.RouteListFiltered(
+			netlink.FAMILY_ALL,
+			&netlink.Route{
+				Table:    table,
+				Protocol: METALBOND_RT_PROTO,
+			},
+			netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL,
+		)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		for _, r := range routes {
+			err := netlink.RouteDel(&r)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (c *NetlinkClient) replaceRoute(dst netip.Prefix, hops []NextHop, table int) error {
