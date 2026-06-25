@@ -39,6 +39,7 @@ var CLI struct {
 		IPv4only      bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
 		Keepalive     uint32   `help:"Keepalive Interval"`
 		Http          string   `help:"HTTP Server listen address. e.g. [::]:4712"`
+		Cleanup       bool     `help:"Cleanup routes upon exit"`
 	} `cmd:"" help:"Run MetalBond Client"`
 }
 
@@ -249,6 +250,14 @@ func main() {
 		<-cint
 
 		m.Shutdown()
+
+		cc, ok := client.(metalbond.CleanupClient)
+		if ok && CLI.Client.Cleanup {
+			err = cc.Cleanup()
+			if err != nil {
+				log.Errorf("failed to clean up routes: %s", err.Error())
+			}
+		}
 
 	default:
 		log.Errorf("Error: %v", ctx.Command())

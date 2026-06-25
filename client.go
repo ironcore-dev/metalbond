@@ -8,6 +8,11 @@ type Client interface {
 	RemoveRoute(vni VNI, dest Destination, nexthop NextHop) error
 }
 
+type CleanupClient interface {
+	Client
+	Cleanup() error
+}
+
 type DummyClient struct{}
 
 func NewDummyClient() *DummyClient {
