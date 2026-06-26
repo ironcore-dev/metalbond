@@ -1,4 +1,4 @@
-FROM golang:1.26-bullseye AS builder
+FROM golang:1.26-trixie AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GOARCH=''
@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
     CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false -ldflags "-X main.version=$METALBOND_VERSION" -o ../spoofer main.go
 
-FROM debian:bullseye-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y iproute2 ethtool wget adduser inetutils-ping libpcap-dev && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/metalbond /usr/sbin/metalbond
