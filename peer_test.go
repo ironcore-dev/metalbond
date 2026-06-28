@@ -29,9 +29,10 @@ func peerState(mb *MetalBond, addr string) func() ConnectionState {
 func localAddr(mb *MetalBond, dest *string, notExpect string) func() string {
 	return func() string {
 		for _, peer := range mb.peers {
-			if peer.localAddr != "" && peer.localAddr != notExpect {
-				*dest = peer.localAddr
-				return peer.localAddr
+			addr := peer.LocalAddr()
+			if addr != "" && addr != notExpect {
+				*dest = addr
+				return addr
 			}
 		}
 		return ""
