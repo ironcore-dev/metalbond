@@ -19,12 +19,13 @@ var RetryIntervalMin = 5
 var RetryIntervalMax = 5
 
 type metalBondPeer struct {
-	conn       *net.Conn
-	remoteAddr string
-	localIP    string
-	localAddr  string
-	direction  ConnectionDirection
-	isServer   bool
+	conn         *net.Conn
+	remoteAddr   string
+	localIP      string
+	localAddr    string
+	mtxLocalAddr sync.RWMutex
+	direction    ConnectionDirection
+	isServer     bool
 
 	mtxReset sync.RWMutex
 	mtxState sync.RWMutex
@@ -208,7 +209,19 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 }
 
 func (p *metalBondPeer) log() *logrus.Entry {
-	return logrus.WithField("peer", p.remoteAddr).WithField("state", p.GetState().String()).WithField("localAddr", p.localAddr)
+	return logrus.WithField("peer", p.remoteAddr).WithField("state", p.GetState().String()).WithField("localAddr", p.LocalAddr())
+}
+
+func (p *metalBondPeer) LocalAddr() string {
+	p.mtxLocalAddr.RLock()
+	defer p.mtxLocalAddr.RUnlock()
+	return p.localAddr
+}
+
+func (p *metalBondPeer) setLocalAddr(addr string) {
+	p.mtxLocalAddr.Lock()
+	defer p.mtxLocalAddr.Unlock()
+	p.localAddr = addr
 }
 
 func (p *metalBondPeer) cleanup() {
@@ -296,7 +309,7 @@ func (p *metalBondPeer) handle() {
 		}
 
 		conn := net.Conn(tcpConn)
-		p.localAddr = conn.LocalAddr().String()
+		p.setLocalAddr(conn.LocalAddr().String())
 		p.conn = &conn
 
 	}
@@ -591,7 +604,7 @@ func (p *metalBondPeer) Reset() {
 		p.wg.Wait()
 
 		p.conn = nil
-		p.localAddr = ""
+		p.setLocalAddr("")
 		retry := time.Duration(rand.Intn(RetryIntervalMax)+RetryIntervalMin) * time.Second
 		p.log().Infof("Closed. Waiting %s...", retry)
 
