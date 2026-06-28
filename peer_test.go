@@ -75,8 +75,7 @@ var _ = Describe("Peer", func() {
 
 	It("should subscribe", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		localIP := net.ParseIP("127.0.0.2")
-		err := mbClient.AddPeer(serverAddress, localIP.String())
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
 		time.Sleep(5 * time.Second)
@@ -105,7 +104,7 @@ var _ = Describe("Peer", func() {
 
 	It("should reset", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
 		clientAddr := getLocalAddr(mbClient, "")
@@ -136,7 +135,7 @@ var _ = Describe("Peer", func() {
 
 	It("should reconnect", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
 		clientAddr := getLocalAddr(mbClient, "")
@@ -165,7 +164,7 @@ var _ = Describe("Peer", func() {
 
 	It("client timeout", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
 		clientAddr := getLocalAddr(mbClient, "")
@@ -208,9 +207,7 @@ var _ = Describe("Peer", func() {
 			go func(index int) {
 				defer wg.Done()
 				mbClient := NewMetalBond(Config{}, client)
-				localIP := net.ParseIP("127.0.0.2")
-				localIP = incrementIPv4(localIP, index)
-				err := mbClient.AddPeer(serverAddress, localIP.String())
+				err := mbClient.AddPeer(serverAddress, "")
 				Expect(err).NotTo(HaveOccurred())
 
 				// wait for the peer loop to start
@@ -404,9 +401,9 @@ var _ = Describe("Route Filtering", func() {
 		mbClient1 := NewMetalBond(Config{}, client1)
 		mbClient2 := NewMetalBond(Config{}, client2)
 
-		err := mbClient1.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient1.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
-		err = mbClient2.AddPeer(serverAddress, "127.0.0.3")
+		err = mbClient2.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(waitForPeerState(mbClient1, serverAddress, ESTABLISHED)).To(BeTrue())
