@@ -6,6 +6,7 @@ package metalbond
 import (
 	"net"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,7 +21,11 @@ func TestMetalbond(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	log.SetLevel(log.TraceLevel)
-	//log.SetLevel(log.InfoLevel)
+
+	SetDefaultEventuallyTimeout(30 * time.Second)
+	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+	SetDefaultConsistentlyDuration(1 * time.Second)
+	SetDefaultConsistentlyPollingInterval(100 * time.Millisecond)
 })
 
 func getRandomTCPPort() int {
