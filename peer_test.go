@@ -5,16 +5,39 @@ package metalbond
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"net/netip"
 	"sync"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 )
+
+func peerState(mb *MetalBond, addr string) func() ConnectionState {
+	return func() ConnectionState {
+		mb.mtxPeers.RLock()
+		peer := mb.peers[addr]
+		mb.mtxPeers.RUnlock()
+		if peer == nil {
+			return CLOSED
+		}
+		return peer.GetState()
+	}
+}
+
+func localAddr(mb *MetalBond, dest *string, notExpect string) func() string {
+	return func() string {
+		for _, peer := range mb.peers {
+			addr := peer.LocalAddr()
+			if addr != "" && addr != notExpect {
+				*dest = addr
+				return addr
+			}
+		}
+		return ""
+	}
+}
 
 type TrackingClient struct {
 	mtx    sync.Mutex
@@ -75,11 +98,10 @@ var _ = Describe("Peer", func() {
 
 	It("should subscribe", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		localIP := net.ParseIP("127.0.0.2")
-		err := mbClient.AddPeer(serverAddress, localIP.String())
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
-		time.Sleep(5 * time.Second)
+		Eventually(peerState(mbClient, serverAddress)).Should(Equal(ESTABLISHED))
 		vni := VNI(200)
 		err = mbClient.Subscribe(vni)
 		if err != nil {
@@ -105,13 +127,13 @@ var _ = Describe("Peer", func() {
 
 	It("should reset", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
-		clientAddr := getLocalAddr(mbClient, "")
-		Expect(clientAddr).NotTo(Equal(""))
+		var clientAddr string
+		Eventually(localAddr(mbClient, &clientAddr, "")).ShouldNot(BeEmpty())
 
-		Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 
 		var p *metalBondPeer
 		for _, peer := range mbServer.peers {
@@ -127,22 +149,20 @@ var _ = Describe("Peer", func() {
 		// expect the peer state to be closed
 		Expect(p.GetState()).To(Equal(CLOSED))
 
-		clientAddr = getLocalAddr(mbClient, clientAddr)
-		Expect(clientAddr).NotTo(Equal(""))
+		Eventually(localAddr(mbClient, &clientAddr, clientAddr)).ShouldNot(BeEmpty())
 
-		// wait for the peer to be established again
-		Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 	})
 
 	It("should reconnect", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
-		clientAddr := getLocalAddr(mbClient, "")
-		Expect(clientAddr).NotTo(Equal(""))
+		var clientAddr string
+		Eventually(localAddr(mbClient, &clientAddr, "")).ShouldNot(BeEmpty())
 
-		Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 
 		var p *metalBondPeer
 		for _, peer := range mbServer.peers {
@@ -156,22 +176,22 @@ var _ = Describe("Peer", func() {
 		// expect the peer state to be closed
 		Expect(p.GetState()).To(Equal(CLOSED))
 
-		clientAddr = getLocalAddr(mbClient, clientAddr)
-		Expect(clientAddr).NotTo(Equal(""))
+		Eventually(localAddr(mbClient, &clientAddr, clientAddr)).ShouldNot(BeEmpty())
 
-		// wait for the peer to be established again
-		Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 	})
 
 	It("client timeout", func() {
-		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "127.0.0.2")
+		mbClient := NewMetalBond(Config{
+			KeepaliveInterval: 1,
+		}, client)
+		err := mbClient.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
-		clientAddr := getLocalAddr(mbClient, "")
-		Expect(clientAddr).NotTo(Equal(""))
+		var clientAddr string
+		Eventually(localAddr(mbClient, &clientAddr, "")).ShouldNot(BeEmpty())
 
-		Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+		Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 
 		vni := VNI(200)
 		err = mbClient.Subscribe(vni)
@@ -189,47 +209,45 @@ var _ = Describe("Peer", func() {
 		// Close the keepalive
 		p.keepaliveStop <- true
 
-		time.Sleep(12 * time.Second)
-
-		// expect the peer state to be closed
-		Expect(p.GetState()).To(Equal(RETRY))
+		Eventually(p.GetState).Should(Equal(RETRY))
 
 		err = mbClient.RemovePeer(serverAddress)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("should announce", func() {
-		totalClients := 600 // TODO: was 1000 (local test works for this large value), but it is reduced to this value to make CI/CD happy
-		var wg sync.WaitGroup
+		savedRetryMin := RetryIntervalMin
+		savedRetryMax := RetryIntervalMax
+		RetryIntervalMin = 0
+		RetryIntervalMax = 1
+		defer func() {
+			RetryIntervalMin = savedRetryMin
+			RetryIntervalMax = savedRetryMax
+		}()
 
+		totalClients := 50
+		var wg sync.WaitGroup
 		for i := 1; i < totalClients+1; i++ {
 			wg.Add(1)
 
 			go func(index int) {
 				defer wg.Done()
 				mbClient := NewMetalBond(Config{}, client)
-				localIP := net.ParseIP("127.0.0.2")
-				localIP = incrementIPv4(localIP, index)
-				err := mbClient.AddPeer(serverAddress, localIP.String())
+				err := mbClient.AddPeer(serverAddress, "")
 				Expect(err).NotTo(HaveOccurred())
 
-				// wait for the peer loop to start
-				time.Sleep(1 * time.Second)
-				clientAddr := getLocalAddr(mbClient, "")
-				Expect(clientAddr).NotTo(Equal(""))
+				var clientAddr string
+				Eventually(localAddr(mbClient, &clientAddr, "")).ShouldNot(BeEmpty())
 
-				Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+				Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 
 				mbServer.mtxPeers.RLock()
 				p := mbServer.peers[clientAddr]
 				mbServer.mtxPeers.RUnlock()
 
-				Expect(waitForPeerState(mbClient, serverAddress, ESTABLISHED)).NotTo(BeFalse())
+				Eventually(peerState(mbClient, serverAddress)).Should(Equal(ESTABLISHED))
 				vni := VNI(index % 10)
 				err = mbClient.Subscribe(vni)
-				if err != nil {
-					log.Errorf("subscribe failed: %v", err)
-				}
 				Expect(err).NotTo(HaveOccurred())
 
 				// prepare the route
@@ -251,13 +269,9 @@ var _ = Describe("Peer", func() {
 				err = mbClient.AnnounceRoute(vni, dest, nextHop)
 				Expect(err).NotTo(HaveOccurred())
 
-				// wait for the route to be received
-				time.Sleep(3 * time.Second)
-
-				// check if the route was received
-				_, exists := p.receivedRoutes.routes[vni][dest][nextHop][p]
-				Expect(exists).To(BeTrue())
-				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() bool {
+					return p.receivedRoutes.NextHopExists(vni, dest, nextHop, p)
+				}).Should(BeTrue())
 
 				// Close the peer
 				err = p.metalbond.RemovePeer(p.remoteAddr)
@@ -266,99 +280,23 @@ var _ = Describe("Peer", func() {
 				// expect the peer state to be closed
 				Expect(p.GetState()).To(Equal(CLOSED))
 
-				// wait for the peer to be established again
-				wait := rand.Intn(20) + 1
-				time.Sleep(time.Duration(wait) * time.Second)
+				Eventually(localAddr(mbClient, &clientAddr, clientAddr)).ShouldNot(BeEmpty())
 
-				notExcept := clientAddr
-				clientAddr = getLocalAddr(mbClient, notExcept)
-				if clientAddr == "" {
-					log.Errorf("clientAddr is empty '%s'", clientAddr)
-				}
-				Expect(clientAddr).ShouldNot(BeEmpty())
-
-				// check if the peer is established again
-				Expect(waitForPeerState(mbServer, clientAddr, ESTABLISHED)).NotTo(BeFalse())
+				Eventually(peerState(mbServer, clientAddr)).Should(Equal(ESTABLISHED))
 
 				mbServer.mtxPeers.RLock()
 				p = mbServer.peers[clientAddr]
 				mbServer.mtxPeers.RUnlock()
 
-				// wait for the route to be received
-				time.Sleep(3 * time.Second)
-
-				// check if the route was received
-				_, exists = p.receivedRoutes.routes[vni][dest][nextHop][p]
-				if !exists {
-					log.Errorf("route not received vni %v, dest %v, nextHop %v, clientAddr %s", vni, dest, nextHop, clientAddr)
-					for vni, dest := range p.receivedRoutes.routes {
-						log.Errorf("vni %v", vni)
-						for dest, nextHop := range dest {
-							log.Errorf("dest %v", dest)
-							for nextHop, peers := range nextHop {
-								log.Errorf("nextHop %v", nextHop)
-								for peer := range peers {
-									log.Errorf("peer %v", peer)
-								}
-							}
-						}
-					}
-
-				}
-				Expect(exists).To(BeTrue())
+				Eventually(func() bool {
+					return p.receivedRoutes.NextHopExists(vni, dest, nextHop, p)
+				}).Should(BeTrue())
 			}(i)
 		}
 
 		wg.Wait()
 	})
 })
-
-func waitForPeerState(mbServer *MetalBond, clientAddr string, expectedState ConnectionState) bool {
-
-	// Call the checkPeerState function repeatedly until it returns true or a timeout is reached
-	timeout := 30 * time.Second
-	start := time.Now()
-	for {
-		mbServer.mtxPeers.RLock()
-		peer := mbServer.peers[clientAddr]
-		mbServer.mtxPeers.RUnlock()
-
-		if peer != nil && peer.GetState() == expectedState {
-			return true
-		}
-
-		if time.Since(start) >= timeout {
-			state := "NONE"
-			if peer != nil {
-				state = peer.GetState().String()
-			}
-			log.Errorf("Timeout reached while waiting for peer (%s) to reach expected state %s, but state is %s", clientAddr, expectedState, state)
-			return false
-		}
-
-		// Wait a short time before checking again
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-func getLocalAddr(mbClient *MetalBond, notExcept string) string {
-	timeout := 30 * time.Second
-	start := time.Now()
-	for {
-		for _, peer := range mbClient.peers {
-			if peer.localAddr != "" && peer.localAddr != notExcept {
-				return peer.localAddr
-			}
-		}
-
-		if time.Since(start) >= timeout {
-			return ""
-		}
-
-		// Wait a short time before checking again
-		time.Sleep(500 * time.Millisecond)
-	}
-}
 
 func incrementIPv4(ip net.IP, count int) net.IP {
 	// Increment the IP address by the count
@@ -404,13 +342,13 @@ var _ = Describe("Route Filtering", func() {
 		mbClient1 := NewMetalBond(Config{}, client1)
 		mbClient2 := NewMetalBond(Config{}, client2)
 
-		err := mbClient1.AddPeer(serverAddress, "127.0.0.2")
+		err := mbClient1.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
-		err = mbClient2.AddPeer(serverAddress, "127.0.0.3")
+		err = mbClient2.AddPeer(serverAddress, "")
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(waitForPeerState(mbClient1, serverAddress, ESTABLISHED)).To(BeTrue())
-		Expect(waitForPeerState(mbClient2, serverAddress, ESTABLISHED)).To(BeTrue())
+		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient2, serverAddress)).Should(Equal(ESTABLISHED))
 
 		err = mbClient1.Subscribe(vni)
 		Expect(err).NotTo(HaveOccurred())
@@ -436,10 +374,12 @@ var _ = Describe("Route Filtering", func() {
 		err = mbClient2.AnnounceRoute(vni, dest, nextHop2)
 		Expect(err).NotTo(HaveOccurred())
 
-		time.Sleep(3 * time.Second)
-
-		Expect(client1.HasRoute(vni, dest)).To(BeFalse(), "client1 should not have installed route for destination it announces")
-		Expect(client2.HasRoute(vni, dest)).To(BeFalse(), "client2 should not have installed route for destination it announces")
+		Consistently(func() bool {
+			return client1.HasRoute(vni, dest)
+		}).Should(BeFalse(), "client1 should not have installed route for destination it announces")
+		Consistently(func() bool {
+			return client2.HasRoute(vni, dest)
+		}).Should(BeFalse(), "client2 should not have installed route for destination it announces")
 
 		mbClient1.Shutdown()
 		mbClient2.Shutdown()

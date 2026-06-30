@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/ironcore-dev/metalbond/pb"
 	"github.com/sirupsen/logrus"
@@ -120,10 +119,7 @@ func (m *MetalBond) PeerState(addr string) (ConnectionState, error) {
 
 func (m *MetalBond) Subscribe(vni VNI) error {
 	m.mtxMySubscriptions.Lock()
-	defer func() {
-		m.mtxMySubscriptions.Unlock()
-		time.Sleep(1 * time.Second)
-	}()
+	defer m.mtxMySubscriptions.Unlock()
 
 	if _, exists := m.mySubscriptions[vni]; exists {
 		return fmt.Errorf("already subscribed to VNI %d", vni)
@@ -512,8 +508,15 @@ func (m *MetalBond) Shutdown() {
 		(*m.lis).Close()
 	}
 
-	for p := range m.peers {
-		m.unsafeRemovePeer(p)
+	m.mtxPeers.RLock()
+	addrs := make([]string, 0, len(m.peers))
+	for addr := range m.peers {
+		addrs = append(addrs, addr)
+	}
+	m.mtxPeers.RUnlock()
+
+	for _, addr := range addrs {
+		m.unsafeRemovePeer(addr)
 	}
 }
 
