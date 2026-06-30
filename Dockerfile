@@ -46,4 +46,4 @@ COPY --from=builder /workspace/metalbond /usr/sbin/metalbond
 COPY --from=builder /workspace/html /usr/share/metalbond/html
 COPY --from=builder /workspace/spoofer /usr/sbin/spoofer
 
-RUN echo -e "254\tmetalbond" >> "/etc/iproute2/rt_protos"
+RUN mkdir -p /etc/iproute2 && echo -e "254\tmetalbond" >> "/etc/iproute2/rt_protos"
