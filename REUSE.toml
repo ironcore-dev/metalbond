@@ -12,6 +12,7 @@ path = [
     ".vscode/settings.json",
     "Dockerfile",
     "Makefile",
+    "CODEOWNERS",
     "go.mod",
     "go.sum",
     "debian/**",
