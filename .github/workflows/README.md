@@ -4,7 +4,7 @@ Workflows listening to GitHub events are listed below.
 
 ## release-drafter
 
-Changes on master are detected, and added to the next draft release of metalbond.
+Changes on main are detected, and added to the next draft release of metalbond.
 
 For details see [release-drafter.yml](release-drafter.yml)
 
