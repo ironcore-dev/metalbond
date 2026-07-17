@@ -15,7 +15,7 @@ path = [
     "CODEOWNERS",
     "go.mod",
     "go.sum",
-    "debian/**",
+    "examples/**",
     "html/**",
     "pb/metalbond.pb.go",
     "pb/metalbond.proto",

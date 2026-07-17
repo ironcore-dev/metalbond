@@ -2,8 +2,6 @@
 IMG ?= controller:latest
 BUILDARGS ?=
 
-DEB_BUILD_CONTAINER ?= golang:1.24-bookworm
-
 ifneq ("$(wildcard ./version)","")
 	METALBOND_VERSION ?= $(shell cat ./version)
 else ifeq ($(shell git describe --exact-match --tags 2> /dev/null),)
@@ -13,7 +11,7 @@ else
 endif
 METALBOND_LDFLAGS = "-X github.com/ironcore-dev/metalbond.METALBOND_VERSION=$(METALBOND_VERSION)"
 
-ARCHITECTURE = $(shell dpkg --print-architecture)
+ARCHITECTURE ?= $(shell go env GOARCH)
 
 .PHONY: all
 all: $(ARCHITECTURE)
@@ -34,13 +32,6 @@ target:
 target_html: | target
 	rm -rf target/html
 	cp -ra html target
-
-.PHONY: tarball
-tarball: | target
-	rsync -a ./* target/metalbond-$(METALBOND_VERSION)/ --exclude target/
-#	echo $(METALBOND_VERSION) > target/metalbond-$(METALBOND_VERSION)/version
-	cd target && tar -czf metalbond_$(METALBOND_VERSION).orig.tar.gz metalbond-$(METALBOND_VERSION)
-	rm -rf target/metalbond-$(METALBOND_VERSION)/
 
 .PHONY: run-server
 run-server: all
@@ -100,11 +91,6 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
-
-.PHONY: deb
-deb:
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=amd64" $(DEB_BUILD_CONTAINER)  bash -c "cd /workdir && debian/make-deb.sh"
-	docker run --rm -v "$(PWD):/workdir" -e "METALBOND_VERSION=$(METALBOND_VERSION)" -e "ARCHITECTURE=arm64" $(DEB_BUILD_CONTAINER)  bash -c "cd /workdir && debian/make-deb.sh"
 
 .PHONY: unit-test
 unit-test:
