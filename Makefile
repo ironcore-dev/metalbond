@@ -21,11 +21,11 @@ all: $(ARCHITECTURE)
 
 .PHONY: amd64
 amd64: target_html
-	cd cmd && go build -buildvcs=false -ldflags $(METALBOND_LDFLAGS) -o ../target/metalbond_amd64
+	env GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags $(METALBOND_LDFLAGS) -o target/metalbond_amd64 ./cmd/metalbond
 
 .PHONY: arm64
 arm64: target_html
-	cd cmd && env GOOS=linux GOARCH=arm64 go build -buildvcs=false -ldflags $(METALBOND_LDFLAGS) -o ../target/metalbond_arm64
+	env GOOS=linux GOARCH=arm64 go build -buildvcs=false -ldflags $(METALBOND_LDFLAGS) -o target/metalbond_arm64 ./cmd/metalbond
 
 target:
 	mkdir -p target
