@@ -184,7 +184,7 @@ func (m *MetalBond) IsRouteAnnounced(vni VNI, dest Destination, hop NextHop) boo
 func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error {
 	m.log().Infof("Announcing VNI %d: %s via %s", vni, dest, hop)
 
-	if err := m.myAnnouncements.AddNextHop(vni, dest, hop, nil); err != nil {
+	if _, err := m.myAnnouncements.AddNextHop(vni, dest, hop, nil); err != nil {
 		return fmt.Errorf("cannot announce route: %v", err)
 	}
 
@@ -328,7 +328,7 @@ func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Dest
 		return nil
 	}
 
-	err := m.routeTable.AddNextHop(vni, dest, hop, fromPeer)
+	count, err := m.routeTable.AddNextHop(vni, dest, hop, fromPeer)
 	if err != nil {
 		return fmt.Errorf("cannot add route to route table: %v", err)
 	}
@@ -343,9 +343,11 @@ func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Dest
 		m.log().Errorf("Could not distribute route to peers: %v", err)
 	}
 
-	err = m.client.AddRoute(vni, dest, hop)
-	if err != nil {
-		m.log().Errorf("Client.AddRoute call failed: %v", err)
+	if count == 1 {
+		err = m.client.AddRoute(vni, dest, hop)
+		if err != nil {
+			m.log().Errorf("Client.AddRoute call failed: %v", err)
+		}
 	}
 
 	return nil
@@ -367,11 +369,11 @@ func (m *MetalBond) removeReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest D
 		if err := m.distributeRouteToPeers(REMOVE, vni, dest, hop, fromPeer); err != nil {
 			m.log().Errorf("Could not distribute route to peers: %v", err)
 		}
-	}
 
-	err = m.client.RemoveRoute(vni, dest, hop)
-	if err != nil {
-		m.log().Errorf("Client.RemoveRoute call failed: %v", err)
+		err = m.client.RemoveRoute(vni, dest, hop)
+		if err != nil {
+			m.log().Errorf("Client.RemoveRoute call failed: %v", err)
+		}
 	}
 
 	return nil
