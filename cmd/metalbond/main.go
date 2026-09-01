@@ -25,23 +25,29 @@ import (
 
 var CLI struct {
 	Server struct {
-		Listen    string `help:"listen address. e.g. [::]:4711"`
-		Verbose   bool   `help:"Enable debug logging" short:"v"`
-		Keepalive uint32 `help:"Keepalive Interval"`
-		Http      string `help:"HTTP Server listen address. e.g. [::]:4712"`
+		Listen                   string `help:"listen address. e.g. [::]:4711"`
+		Verbose                  bool   `help:"Enable debug logging" short:"v"`
+		Keepalive                uint32 `help:"Keepalive Interval"`
+		Http                     string `help:"HTTP Server listen address. e.g. [::]:4712"`
+		TxChanCapacity           int    `help:"Specifies the maximum number of outgoing messages that can be queued before blocking; controls the buffer size for outgoing messages."`
+		RxChanEventCapacity      int    `help:"Sets the buffer size for receiving HELLO and KEEPALIVE events; limits the number of concurrent event messages that can be processed."`
+		RxChanDataUpdateCapacity int    `help:"Defines the capacity for subscription and update messages (e.g., SUBSCRIBE, UNSUBSCRIBE, UPDATE); manages the message queue for data updates and subscriptions."`
 	} `cmd:"" help:"Run MetalBond Server"`
 
 	Client struct {
-		Server        []string `help:"Server address. You may define multiple servers."`
-		Subscribe     []uint32 `help:"Subscribe to VNIs"`
-		Announce      []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1#[STD|LB|NAT]#[FROM#TO]"`
-		Verbose       bool     `help:"Enable debug logging" short:"v"`
-		InstallRoutes []string `help:"install routes via netlink. VNI to route table mapping (e.g. 23#100 installs routes of VNI 23 to route table 100)"`
-		Tun           string   `help:"ip6tnl tun device name"`
-		IPv4only      bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
-		Keepalive     uint32   `help:"Keepalive Interval"`
-		Http          string   `help:"HTTP Server listen address. e.g. [::]:4712"`
-		Cleanup       bool     `help:"Cleanup routes upon exit"`
+		Server                   []string `help:"Server address. You may define multiple servers."`
+		Subscribe                []uint32 `help:"Subscribe to VNIs"`
+		Announce                 []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1#[STD|LB|NAT]#[FROM#TO]"`
+		Verbose                  bool     `help:"Enable debug logging" short:"v"`
+		InstallRoutes            []string `help:"install routes via netlink. VNI to route table mapping (e.g. 23#100 installs routes of VNI 23 to route table 100)"`
+		Tun                      string   `help:"ip6tnl tun device name"`
+		IPv4only                 bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
+		Keepalive                uint32   `help:"Keepalive Interval"`
+		Http                     string   `help:"HTTP Server listen address. e.g. [::]:4712"`
+		Cleanup                  bool     `help:"Cleanup routes upon exit"`
+		TxChanCapacity           int      `help:"Specifies the maximum number of outgoing messages that can be queued before blocking; controls the buffer size for outgoing messages."`
+		RxChanEventCapacity      int      `help:"Sets the buffer size for receiving HELLO and KEEPALIVE events; limits the number of concurrent event messages that can be processed."`
+		RxChanDataUpdateCapacity int      `help:"Defines the capacity for subscription and update messages (e.g., SUBSCRIBE, UNSUBSCRIBE, UPDATE); manages the message queue for data updates and subscriptions."`
 	} `cmd:"" help:"Run MetalBond Client"`
 }
 
@@ -77,7 +83,22 @@ func main() {
 			}
 		}
 
-		if err := m.StartServer(CLI.Server.Listen); err != nil {
+		txChanCapacity := 2048
+		if CLI.Server.TxChanCapacity > 0 {
+			txChanCapacity = CLI.Server.TxChanCapacity
+		}
+
+		rxChanEventCapacity := 10
+		if CLI.Server.RxChanEventCapacity > 0 {
+			rxChanEventCapacity = CLI.Server.RxChanEventCapacity
+		}
+
+		rxChanDataUpdateCapacity := 100
+		if CLI.Server.RxChanEventCapacity > 0 {
+			rxChanDataUpdateCapacity = CLI.Server.RxChanDataUpdateCapacity
+		}
+
+		if err := m.StartServer(CLI.Server.Listen, txChanCapacity, rxChanEventCapacity, rxChanDataUpdateCapacity); err != nil {
 			panic(fmt.Errorf("failed to start server: %v", err))
 		}
 
@@ -220,8 +241,23 @@ func main() {
 			}
 		}
 
+		txChanCapacity := 100
+		if CLI.Client.TxChanCapacity > 0 {
+			txChanCapacity = CLI.Client.TxChanCapacity
+		}
+
+		rxChanEventCapacity := 10
+		if CLI.Client.RxChanEventCapacity > 0 {
+			rxChanEventCapacity = CLI.Client.RxChanEventCapacity
+		}
+
+		rxChanDataUpdateCapacity := 50
+		if CLI.Client.RxChanEventCapacity > 0 {
+			rxChanDataUpdateCapacity = CLI.Client.RxChanDataUpdateCapacity
+		}
+
 		for _, server := range CLI.Client.Server {
-			if err := m.AddPeer(server, ""); err != nil {
+			if err := m.AddPeer(server, "", txChanCapacity, rxChanEventCapacity, rxChanDataUpdateCapacity); err != nil {
 				panic(fmt.Errorf("failed to add server: %v", err))
 			}
 		}
