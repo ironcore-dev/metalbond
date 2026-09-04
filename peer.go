@@ -128,6 +128,10 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 		}
 	}
 
+	if p.GetState() != ESTABLISHED {
+		return fmt.Errorf("connection not ESTABLISHED")
+	}
+
 	return p.sendMessage(msg)
 }
 
@@ -706,10 +710,10 @@ func (p *metalBondPeer) sendMessage(msg message) error {
 
 	// convert send operation to a time-bounded operation to avoid blocking forever on a congested tx channel
 	select {
-		case p.txChan <- pkt:
-			return nil
-		case <-time.After(sendTimeout):
-			return fmt.Errorf("tx channel congested for peer %s (cap=%d)", p.remoteAddr, cap(p.txChan))
+	case p.txChan <- pkt:
+		return nil
+	case <-time.After(sendTimeout):
+		return fmt.Errorf("tx channel congested for peer %s (cap=%d)", p.remoteAddr, cap(p.txChan))
 	}
 }
 
