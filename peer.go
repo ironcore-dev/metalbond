@@ -18,6 +18,9 @@ import (
 var RetryIntervalMin = 5
 var RetryIntervalMax = 5
 
+const writeTimeout = 10 * time.Second
+const sendTimeout = 5 * time.Second
+
 type metalBondPeer struct {
 	conn         *net.Conn
 	remoteAddr   string
@@ -123,6 +126,10 @@ func (p *metalBondPeer) Unsubscribe(vni VNI) error {
 				p.log().Errorf("Could not remove received route from peer's receivedRoutes Table: %v", err)
 			}
 		}
+	}
+
+	if p.GetState() != ESTABLISHED {
+		return fmt.Errorf("connection not ESTABLISHED")
 	}
 
 	return p.sendMessage(msg)
@@ -701,9 +708,13 @@ func (p *metalBondPeer) sendMessage(msg message) error {
 	hdr := []byte{1, byte(len(msgBytes) >> 8), byte(len(msgBytes) % 256), byte(msgType)}
 	pkt := append(hdr, msgBytes...)
 
-	p.txChan <- pkt
-
-	return nil
+	// convert send operation to a time-bounded operation to avoid blocking forever on a congested tx channel
+	select {
+	case p.txChan <- pkt:
+		return nil
+	case <-time.After(sendTimeout):
+		return fmt.Errorf("tx channel congested for peer %s (cap=%d)", p.remoteAddr, cap(p.txChan))
+	}
 }
 
 func (p *metalBondPeer) txLoop() {
@@ -713,7 +724,10 @@ func (p *metalBondPeer) txLoop() {
 	for {
 		select {
 		case msg := <-p.txChan:
+			// convert write operation to a time-bouned operation to avoid blocking forever on a broken connection
+			_ = (*p.conn).SetWriteDeadline(time.Now().Add(writeTimeout))
 			n, err := (*p.conn).Write(msg)
+			_ = (*p.conn).SetWriteDeadline(time.Time{})
 			if n != len(msg) || err != nil {
 				p.log().Errorf("Could not transmit message completely: %v", err)
 				go p.Reset()
