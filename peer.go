@@ -37,8 +37,8 @@ type metalBondPeer struct {
 
 	metalbond *MetalBond
 
-	keepaliveInterval uint32
-	keepaliveTimer    *time.Timer
+	keepaliveInterval  uint32
+	keepaliveResetChan chan struct{}
 
 	shutdown      chan bool
 	keepaliveStop chan bool
@@ -264,6 +264,7 @@ func (p *metalBondPeer) handle() {
 	p.txChan = make(chan []byte, 65536)
 	p.shutdown = make(chan bool, 5)
 	p.keepaliveStop = make(chan bool, 5)
+	p.keepaliveResetChan = make(chan struct{}, 1)
 	p.txChanClose = make(chan bool, 5)
 	p.rxHello = make(chan msgHello, 5)
 	p.rxKeepalive = make(chan msgKeepalive, 5)
@@ -541,7 +542,7 @@ func (p *metalBondPeer) processRxUpdate(msg msgUpdate) {
 
 	switch msg.Action {
 	case ADD:
-		err = p.receivedRoutes.AddNextHop(msg.VNI, msg.Destination, msg.NextHop, p)
+		_, err = p.receivedRoutes.AddNextHop(msg.VNI, msg.Destination, msg.NextHop, p)
 		if err != nil {
 			p.log().Errorf("Could not add received route (%v -> %v) to peer's receivedRoutes Table: %v", msg.Destination, msg.NextHop, err)
 			return
@@ -622,7 +623,7 @@ func (p *metalBondPeer) keepaliveLoop() {
 
 	timeout := time.Duration(p.keepaliveInterval) * time.Second * 5 / 2
 	p.log().Infof("KEEPALIVE timeout: %v", timeout)
-	p.keepaliveTimer = time.NewTimer(timeout)
+	timer := time.NewTimer(timeout)
 
 	interval := time.Duration(p.keepaliveInterval) * time.Second
 	tckr := time.NewTicker(interval)
@@ -645,22 +646,28 @@ func (p *metalBondPeer) keepaliveLoop() {
 			}
 
 		// Timer detects KEEPALIVE timeouts
-		case <-p.keepaliveTimer.C:
+		case <-timer.C:
 			p.log().Infof("Connection timed out. Closing.")
 			go p.Reset()
+
+		// keepaliveResetChan requests a timer reset on incoming KEEPALIVE
+		case <-p.keepaliveResetChan:
+			timer.Reset(time.Duration(p.keepaliveInterval) * time.Second * 5 / 2)
 
 		// keepaliveStop chan delivers message to stop this routine
 		case <-p.keepaliveStop:
 			p.log().Tracef("Stopping keepaliveLoop")
-			p.keepaliveTimer.Stop()
+			timer.Stop()
 			return
 		}
 	}
 }
 
 func (p *metalBondPeer) resetKeepaliveTimeout() {
-	if p.keepaliveTimer != nil {
-		p.keepaliveTimer.Reset(time.Duration(p.keepaliveInterval) * time.Second * 5 / 2)
+	select {
+	case p.keepaliveResetChan <- struct{}{}:
+	default:
+		// a reset is already pending, nothing to do
 	}
 }
 

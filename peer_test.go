@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,13 +41,17 @@ func localAddr(mb *MetalBond, dest *string, notExpect string) func() string {
 }
 
 type TrackingClient struct {
-	mtx    sync.Mutex
-	routes map[VNI]map[Destination][]NextHop
+	mtx         sync.Mutex
+	routes      map[VNI]map[Destination][]NextHop
+	addCount    int
+	removeCount int
+	removedHops map[VNI]map[Destination][]NextHop
 }
 
 func NewTrackingClient() *TrackingClient {
 	return &TrackingClient{
-		routes: make(map[VNI]map[Destination][]NextHop),
+		routes:      make(map[VNI]map[Destination][]NextHop),
+		removedHops: make(map[VNI]map[Destination][]NextHop),
 	}
 }
 
@@ -57,10 +62,18 @@ func (c *TrackingClient) AddRoute(vni VNI, dest Destination, nexthop NextHop) er
 		c.routes[vni] = make(map[Destination][]NextHop)
 	}
 	c.routes[vni][dest] = append(c.routes[vni][dest], nexthop)
+	c.addCount++
 	return nil
 }
 
 func (c *TrackingClient) RemoveRoute(vni VNI, dest Destination, nexthop NextHop) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.removedHops[vni] == nil {
+		c.removedHops[vni] = make(map[Destination][]NextHop)
+	}
+	c.removedHops[vni][dest] = append(c.removedHops[vni][dest], nexthop)
+	c.removeCount++
 	return nil
 }
 
@@ -72,6 +85,18 @@ func (c *TrackingClient) HasRoute(vni VNI, dest Destination) bool {
 	}
 	_, exists := c.routes[vni][dest]
 	return exists
+}
+
+func (c *TrackingClient) GetAddCount() int {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.addCount
+}
+
+func (c *TrackingClient) GetRemoveCount() int {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.removeCount
 }
 
 var _ = Describe("Peer", func() {
@@ -383,5 +408,185 @@ var _ = Describe("Route Filtering", func() {
 
 		mbClient1.Shutdown()
 		mbClient2.Shutdown()
+	})
+})
+
+var _ = Describe("Multi-Server HA", func() {
+	var (
+		mbServer1      *MetalBond
+		mbServer2      *MetalBond
+		serverAddress1 string
+		serverAddress2 string
+	)
+
+	BeforeEach(func() {
+		log.Info("----- START Multi-Server HA -----")
+		config := Config{}
+		mbServer1 = NewMetalBond(config, NewDummyClient())
+		mbServer2 = NewMetalBond(config, NewDummyClient())
+		serverAddress1 = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
+		serverAddress2 = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
+		err := mbServer1.StartServer(serverAddress1)
+		Expect(err).ToNot(HaveOccurred())
+		err = mbServer2.StartServer(serverAddress2)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		mbServer1.Shutdown()
+		mbServer2.Shutdown()
+	})
+
+	It("should keep route when one of two servers disconnects", func() {
+		vni := VNI(100)
+
+		trackingClient := NewTrackingClient()
+		mbClient := NewMetalBond(Config{}, trackingClient)
+
+		err := mbClient.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(peerState(mbClient, serverAddress1)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		dest := Destination{
+			Prefix:    netip.MustParsePrefix("10.0.0.0/24"),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: netip.MustParseAddr("fd00::1"),
+		}
+
+		announcer1 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer1.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer1, serverAddress1)).Should(Equal(ESTABLISHED))
+
+		announcer2 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer2.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer2, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = announcer1.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+		err = announcer2.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() bool { return trackingClient.HasRoute(vni, dest) }).Should(BeTrue())
+		Expect(trackingClient.GetAddCount()).To(Equal(1), "AddRoute should be called exactly once")
+
+		// Disconnect one server — route should survive
+		announcer1.Shutdown()
+		Consistently(func() int { return trackingClient.GetRemoveCount() }).WithTimeout(2 * time.Second).Should(Equal(0))
+
+		announcer2.Shutdown()
+		mbClient.Shutdown()
+	})
+
+	It("should remove route when all servers disconnect", func() {
+		vni := VNI(100)
+
+		trackingClient := NewTrackingClient()
+		mbClient := NewMetalBond(Config{}, trackingClient)
+
+		err := mbClient.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(peerState(mbClient, serverAddress1)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		dest := Destination{
+			Prefix:    netip.MustParsePrefix("10.0.0.0/24"),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: netip.MustParseAddr("fd00::1"),
+		}
+
+		announcer1 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer1.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer1, serverAddress1)).Should(Equal(ESTABLISHED))
+
+		announcer2 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer2.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer2, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = announcer1.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+		err = announcer2.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() bool { return trackingClient.HasRoute(vni, dest) }).Should(BeTrue())
+
+		// Disconnect both servers — route should be removed
+		announcer1.Shutdown()
+		Consistently(func() int { return trackingClient.GetRemoveCount() }).WithTimeout(2 * time.Second).Should(Equal(0))
+
+		announcer2.Shutdown()
+		Eventually(func() int { return trackingClient.GetRemoveCount() }).Should(Equal(1))
+
+		mbClient.Shutdown()
+	})
+
+	It("should call AddRoute only once when route received from multiple servers", func() {
+		vni := VNI(100)
+
+		trackingClient := NewTrackingClient()
+		mbClient := NewMetalBond(Config{}, trackingClient)
+
+		err := mbClient.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		err = mbClient.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(peerState(mbClient, serverAddress1)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = mbClient.Subscribe(vni)
+		Expect(err).NotTo(HaveOccurred())
+
+		dest := Destination{
+			Prefix:    netip.MustParsePrefix("10.0.0.0/24"),
+			IPVersion: IPV4,
+		}
+		nextHop := NextHop{
+			TargetVNI:     uint32(vni),
+			TargetAddress: netip.MustParseAddr("fd00::1"),
+		}
+
+		announcer1 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer1.AddPeer(serverAddress1, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer1, serverAddress1)).Should(Equal(ESTABLISHED))
+
+		announcer2 := NewMetalBond(Config{}, NewDummyClient())
+		err = announcer2.AddPeer(serverAddress2, "")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(peerState(announcer2, serverAddress2)).Should(Equal(ESTABLISHED))
+
+		err = announcer1.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+		err = announcer2.AnnounceRoute(vni, dest, nextHop)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() int { return trackingClient.GetAddCount() }).Should(Equal(1))
+
+		announcer1.Shutdown()
+		announcer2.Shutdown()
+		mbClient.Shutdown()
 	})
 })
