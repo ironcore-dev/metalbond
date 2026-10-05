@@ -327,8 +327,10 @@ func (m *MetalBond) GetNextHopByVniAndDestination(vni VNI, dest Destination) []N
 }
 
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
-	if len(m.myAnnouncements.GetNextHopsByDestination(vni, dest)) > 0 {
-		m.log().Debugf("Skipping received route VNI %d %s via %s: we already announce this destination", vni, dest, hop)
+	// for standard route type (e.g., a route announcing a private IP of a VM, or a prefix, a default route announced by routers)
+	// forbid receiving the route for the same prefix but announced by other client. 
+	if hop.Type == pb.NextHopType_STANDARD && len(m.myAnnouncements.GetNextHopsByDestination(vni, dest)) > 0 {
+		m.log().Debugf("Skipping received default route VNI %d via %s: we announce it ourselves", vni, hop)
 		return nil
 	}
 
