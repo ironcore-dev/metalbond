@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"sync"
 
+	"github.com/ironcore-dev/metalbond/pb"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
@@ -72,6 +73,15 @@ func (c *TrackingClient) HasRoute(vni VNI, dest Destination) bool {
 	}
 	_, exists := c.routes[vni][dest]
 	return exists
+}
+
+func (c *TrackingClient) GetRoutes(vni VNI, dest Destination) []NextHop {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	hops := c.routes[vni][dest]
+	out := make([]NextHop, len(hops))
+	copy(out, hops)
+	return out
 }
 
 var _ = Describe("Peer", func() {
@@ -383,5 +393,193 @@ var _ = Describe("Route Filtering", func() {
 
 		mbClient1.Shutdown()
 		mbClient2.Shutdown()
+	})
+
+	It("should install NAT routes with different port ranges from different peers (shared NAT public IP)", func() {
+		publicVNI := VNI(100)
+		tenantVNI := VNI(12345)
+
+		client1 := NewTrackingClient()
+		client2 := NewTrackingClient()
+
+		mbClient1 := NewMetalBond(Config{}, client1)
+		mbClient2 := NewMetalBond(Config{}, client2)
+
+		Expect(mbClient1.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbClient2.AddPeer(serverAddress, "")).To(Succeed())
+
+		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient2, serverAddress)).Should(Equal(ESTABLISHED))
+
+		Expect(mbClient1.Subscribe(publicVNI)).To(Succeed())
+		Expect(mbClient1.Subscribe(tenantVNI)).To(Succeed())
+		Expect(mbClient2.Subscribe(publicVNI)).To(Succeed())
+		Expect(mbClient2.Subscribe(tenantVNI)).To(Succeed())
+
+		natIP := Destination{
+			Prefix:    netip.MustParsePrefix("45.86.152.22/32"),
+			IPVersion: IPV4,
+		}
+
+		// Each peer makes both announcements metalnet makes for a NAT IP:
+		//   PublicVNI STANDARD  - fabric reachability (no port range)
+		//   tenantVNI NAT       - per-port-range forwarding info
+		client1Public := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::1"),
+			Type:          pb.NextHopType_STANDARD,
+		}
+		client1Tenant := NextHop{
+			TargetAddress:    netip.MustParseAddr("fd00::1"),
+			Type:             pb.NextHopType_NAT,
+			NATPortRangeFrom: 1024,
+			NATPortRangeTo:   3071,
+		}
+		client2Public := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::2"),
+			Type:          pb.NextHopType_STANDARD,
+		}
+		client2Tenant := NextHop{
+			TargetAddress:    netip.MustParseAddr("fd00::2"),
+			Type:             pb.NextHopType_NAT,
+			NATPortRangeFrom: 3072,
+			NATPortRangeTo:   5119,
+		}
+
+		Expect(mbClient1.AnnounceRoute(publicVNI, natIP, client1Public)).To(Succeed())
+		Expect(mbClient1.AnnounceRoute(tenantVNI, natIP, client1Tenant)).To(Succeed())
+		Expect(mbClient2.AnnounceRoute(publicVNI, natIP, client2Public)).To(Succeed())
+		Expect(mbClient2.AnnounceRoute(tenantVNI, natIP, client2Tenant)).To(Succeed())
+
+		Eventually(func() []NextHop {
+			return client1.GetRoutes(publicVNI, natIP)
+		}).ShouldNot(ContainElement(client2Public), "client1 should not have received client2's PublicVNI STANDARD announcement")
+		Eventually(func() []NextHop {
+			return client1.GetRoutes(tenantVNI, natIP)
+		}).Should(ContainElement(client2Tenant), "client1 should have received client2's tenant-VNI NAT announcement with port range")
+
+		Eventually(func() []NextHop {
+			return client2.GetRoutes(publicVNI, natIP)
+		}).ShouldNot(ContainElement(client1Public), "client2 should not have received client1's PublicVNI STANDARD announcement")
+		Eventually(func() []NextHop {
+			return client2.GetRoutes(tenantVNI, natIP)
+		}).Should(ContainElement(client1Tenant), "client2 should have received client1's tenant-VNI NAT announcement with port range")
+
+		// Each client should see exactly one hop per (vni, dest): the peer's.
+		// Self-announcements do not go through the AddRoute callback.
+		Expect(client1.GetRoutes(tenantVNI, natIP)).To(HaveLen(1), "client1 tenantVNI table should hold only client2's hop")
+		Expect(client2.GetRoutes(tenantVNI, natIP)).To(HaveLen(1), "client2 tenantVNI table should hold only client1's hop")
+
+		mbClient1.Shutdown()
+		mbClient2.Shutdown()
+	})
+
+	It("should install LOADBALANCER_TARGET routes from multiple peers for the same VIP (public LB or private LB)", func() {
+		tenantVNI := VNI(12345)
+
+		client1 := NewTrackingClient()
+		client2 := NewTrackingClient()
+
+		mbClient1 := NewMetalBond(Config{}, client1)
+		mbClient2 := NewMetalBond(Config{}, client2)
+
+		Expect(mbClient1.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbClient2.AddPeer(serverAddress, "")).To(Succeed())
+
+		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbClient2, serverAddress)).Should(Equal(ESTABLISHED))
+
+		Expect(mbClient1.Subscribe(tenantVNI)).To(Succeed())
+		Expect(mbClient2.Subscribe(tenantVNI)).To(Succeed())
+
+		lbVIP := Destination{
+			Prefix:    netip.MustParsePrefix("10.100.0.1/32"),
+			IPVersion: IPV4,
+		}
+
+		hop1 := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::b1"),
+			Type:          pb.NextHopType_LOADBALANCER_TARGET,
+		}
+		hop2 := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::b2"),
+			Type:          pb.NextHopType_LOADBALANCER_TARGET,
+		}
+
+		Expect(mbClient1.AnnounceRoute(tenantVNI, lbVIP, hop1)).To(Succeed())
+		Expect(mbClient2.AnnounceRoute(tenantVNI, lbVIP, hop2)).To(Succeed())
+
+		Eventually(func() []NextHop {
+			return client1.GetRoutes(tenantVNI, lbVIP)
+		}).Should(ContainElement(hop2), "client1 should have received client2's LB target announcement")
+		Eventually(func() []NextHop {
+			return client2.GetRoutes(tenantVNI, lbVIP)
+		}).Should(ContainElement(hop1), "client2 should have received client1's LB target announcement")
+
+		Expect(client1.GetRoutes(tenantVNI, lbVIP)).To(HaveLen(1), "client1 should hold only the peer's LB target hop")
+		Expect(client2.GetRoutes(tenantVNI, lbVIP)).To(HaveLen(1), "client2 should hold only the peer's LB target hop")
+
+		mbClient1.Shutdown()
+		mbClient2.Shutdown()
+	})
+
+	It("should install LB_TARGET routes from backends even when a STANDARD route is self-announced for the same VIP (internal LB)", func() {
+		tenantVNI := VNI(12345)
+
+		lbClient := NewTrackingClient()
+		backend1Client := NewTrackingClient()
+		backend2Client := NewTrackingClient()
+
+		mbLB := NewMetalBond(Config{}, lbClient)
+		mbBackend1 := NewMetalBond(Config{}, backend1Client)
+		mbBackend2 := NewMetalBond(Config{}, backend2Client)
+
+		Expect(mbLB.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbBackend1.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbBackend2.AddPeer(serverAddress, "")).To(Succeed())
+
+		Eventually(peerState(mbLB, serverAddress)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbBackend1, serverAddress)).Should(Equal(ESTABLISHED))
+		Eventually(peerState(mbBackend2, serverAddress)).Should(Equal(ESTABLISHED))
+
+		Expect(mbLB.Subscribe(tenantVNI)).To(Succeed())
+		Expect(mbBackend1.Subscribe(tenantVNI)).To(Succeed())
+		Expect(mbBackend2.Subscribe(tenantVNI)).To(Succeed())
+
+		lbVIP := Destination{
+			Prefix:    netip.MustParsePrefix("10.100.0.1/32"),
+			IPVersion: IPV4,
+		}
+
+		lbHop := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::a"),
+			Type:          pb.NextHopType_STANDARD,
+		}
+		backend1Hop := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::b1"),
+			Type:          pb.NextHopType_LOADBALANCER_TARGET,
+		}
+		backend2Hop := NextHop{
+			TargetAddress: netip.MustParseAddr("fd00::b2"),
+			Type:          pb.NextHopType_LOADBALANCER_TARGET,
+		}
+
+		Expect(mbLB.AnnounceRoute(tenantVNI, lbVIP, lbHop)).To(Succeed())
+		Expect(mbBackend1.AnnounceRoute(tenantVNI, lbVIP, backend1Hop)).To(Succeed())
+		Expect(mbBackend2.AnnounceRoute(tenantVNI, lbVIP, backend2Hop)).To(Succeed())
+
+		// The LB host must receive both backend announcements. Pre-fix this
+		// was dropped because the LB host self-announced the same (vni, dest).
+		Eventually(func() []NextHop {
+			return lbClient.GetRoutes(tenantVNI, lbVIP)
+		}).Should(ContainElement(backend1Hop), "LB host should have received backend1's LB target announcement")
+		Eventually(func() []NextHop {
+			return lbClient.GetRoutes(tenantVNI, lbVIP)
+		}).Should(ContainElement(backend2Hop), "LB host should have received backend2's LB target announcement")
+
+		Expect(lbClient.GetRoutes(tenantVNI, lbVIP)).To(HaveLen(2), "LB host should hold exactly the two backend hops")
+
+		mbLB.Shutdown()
+		mbBackend1.Shutdown()
+		mbBackend2.Shutdown()
 	})
 })
