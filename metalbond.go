@@ -329,6 +329,9 @@ func (m *MetalBond) GetNextHopByVniAndDestination(vni VNI, dest Destination) []N
 func (m *MetalBond) addReceivedRoute(fromPeer *metalBondPeer, vni VNI, dest Destination, hop NextHop) error {
 	// for standard route type (e.g., a route announcing a private IP of a VM, or a prefix, a default route announced by routers)
 	// forbid receiving the route for the same prefix but announced by other client.
+	// Note: blocking such routes of STANDARD type, has negative impact on private LB's VIP: a node can announce
+	// its own STANDARD route for a private LB VIP, which will block received other LB node's announced VIP route (same prefix but different underlay IPv6).
+	// however private LB with multiple frontends with the same IP is not supported. so it should be fine.
 	if hop.Type == pb.NextHopType_STANDARD && len(m.myAnnouncements.GetNextHopsByDestination(vni, dest)) > 0 {
 		m.log().Debugf("Skipping received default route VNI %d via %s: we announce it ourselves", vni, hop)
 		return nil
