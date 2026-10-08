@@ -14,6 +14,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	serverTxChanCapacity           = 2048
+	serverRxChanEventCapacity      = 10
+	serverRxChanDataUpdateCapacity = 100
+
+	clientTxChanCapacity           = 100
+	clientRxChanEventCapacity      = 10
+	clientRxChanDataUpdateCapacity = 50
+)
+
 func peerState(mb *MetalBond, addr string) func() ConnectionState {
 	return func() ConnectionState {
 		mb.mtxPeers.RLock()
@@ -88,7 +98,7 @@ var _ = Describe("Peer", func() {
 		client = NewDummyClient()
 		mbServer = NewMetalBond(config, client)
 		serverAddress = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
-		err := mbServer.StartServer(serverAddress)
+		err := mbServer.StartServer(serverAddress, serverTxChanCapacity, serverRxChanEventCapacity, serverRxChanDataUpdateCapacity)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -98,7 +108,7 @@ var _ = Describe("Peer", func() {
 
 	It("should subscribe", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "")
+		err := mbClient.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(peerState(mbClient, serverAddress)).Should(Equal(ESTABLISHED))
@@ -127,7 +137,7 @@ var _ = Describe("Peer", func() {
 
 	It("should reset", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "")
+		err := mbClient.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
 		var clientAddr string
@@ -156,7 +166,7 @@ var _ = Describe("Peer", func() {
 
 	It("should reconnect", func() {
 		mbClient := NewMetalBond(Config{}, client)
-		err := mbClient.AddPeer(serverAddress, "")
+		err := mbClient.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
 		var clientAddr string
@@ -185,7 +195,7 @@ var _ = Describe("Peer", func() {
 		mbClient := NewMetalBond(Config{
 			KeepaliveInterval: 1,
 		}, client)
-		err := mbClient.AddPeer(serverAddress, "")
+		err := mbClient.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
 		var clientAddr string
@@ -233,7 +243,7 @@ var _ = Describe("Peer", func() {
 			go func(index int) {
 				defer wg.Done()
 				mbClient := NewMetalBond(Config{}, client)
-				err := mbClient.AddPeer(serverAddress, "")
+				err := mbClient.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 				Expect(err).NotTo(HaveOccurred())
 
 				var clientAddr string
@@ -325,7 +335,7 @@ var _ = Describe("Route Filtering", func() {
 		config := Config{}
 		mbServer = NewMetalBond(config, NewDummyClient())
 		serverAddress = fmt.Sprintf("127.0.0.1:%d", getRandomTCPPort())
-		err := mbServer.StartServer(serverAddress)
+		err := mbServer.StartServer(serverAddress, serverTxChanCapacity, serverRxChanEventCapacity, serverRxChanDataUpdateCapacity)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -342,9 +352,9 @@ var _ = Describe("Route Filtering", func() {
 		mbClient1 := NewMetalBond(Config{}, client1)
 		mbClient2 := NewMetalBond(Config{}, client2)
 
-		err := mbClient1.AddPeer(serverAddress, "")
+		err := mbClient1.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
-		err = mbClient2.AddPeer(serverAddress, "")
+		err = mbClient2.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))

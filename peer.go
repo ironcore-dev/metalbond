@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,6 +21,7 @@ var RetryIntervalMax = 5
 
 type metalBondPeer struct {
 	conn         *net.Conn
+	id           string
 	remoteAddr   string
 	localIP      string
 	localAddr    string
@@ -50,31 +52,34 @@ type metalBondPeer struct {
 	rxUnsubscribe chan msgUnsubscribe
 	rxUpdate      chan msgUpdate
 	wg            sync.WaitGroup
+
+	txChanCapacity           int
+	rxChanEventCapacity      int
+	rxChanDataUpdateCapacity int
 }
 
-func newMetalBondPeer(
-	pconn *net.Conn,
-	remoteAddr string,
-	localIP string,
-	keepaliveInterval uint32,
-	direction ConnectionDirection,
-	metalbond *MetalBond) *metalBondPeer {
+func newMetalBondPeer(pconn *net.Conn, remoteAddr string, localIP string, txChanCapacity int, rxChanEventCapacity int, rxChanDataUpdateCapacity int, keepaliveInterval uint32, direction ConnectionDirection, metalbond *MetalBond) *metalBondPeer {
 
-	peer := metalBondPeer{
-		conn:              pconn,
-		remoteAddr:        remoteAddr,
-		localIP:           localIP,
-		direction:         direction,
-		state:             CONNECTING,
-		receivedRoutes:    newRouteTable(),
-		subscribedVNIs:    make(map[VNI]bool),
-		keepaliveInterval: keepaliveInterval,
-		metalbond:         metalbond,
+	id := uuid.New()
+	peer := &metalBondPeer{
+		conn:                     pconn,
+		id:                       id.String(),
+		remoteAddr:               remoteAddr,
+		localIP:                  localIP,
+		direction:                direction,
+		state:                    CONNECTING,
+		receivedRoutes:           newRouteTable(),
+		subscribedVNIs:           make(map[VNI]bool),
+		keepaliveInterval:        keepaliveInterval,
+		txChanCapacity:           txChanCapacity,
+		rxChanEventCapacity:      rxChanEventCapacity,
+		rxChanDataUpdateCapacity: rxChanDataUpdateCapacity,
+		metalbond:                metalbond,
 	}
 
 	go peer.handle()
 
-	return &peer
+	return peer
 }
 
 func (p *metalBondPeer) String() string {
@@ -261,15 +266,15 @@ func (p *metalBondPeer) handle() {
 	p.wg.Add(1)
 	defer p.wg.Done()
 
-	p.txChan = make(chan []byte, 65536)
+	p.txChan = make(chan []byte, p.txChanCapacity)
 	p.shutdown = make(chan bool, 5)
 	p.keepaliveStop = make(chan bool, 5)
 	p.txChanClose = make(chan bool, 5)
-	p.rxHello = make(chan msgHello, 5)
-	p.rxKeepalive = make(chan msgKeepalive, 5)
-	p.rxSubscribe = make(chan msgSubscribe, 100)
-	p.rxUnsubscribe = make(chan msgUnsubscribe, 100)
-	p.rxUpdate = make(chan msgUpdate, 100)
+	p.rxHello = make(chan msgHello, p.rxChanEventCapacity)
+	p.rxKeepalive = make(chan msgKeepalive, p.rxChanEventCapacity)
+	p.rxSubscribe = make(chan msgSubscribe, p.rxChanDataUpdateCapacity)
+	p.rxUnsubscribe = make(chan msgUnsubscribe, p.rxChanDataUpdateCapacity)
+	p.rxUpdate = make(chan msgUpdate, p.rxChanDataUpdateCapacity)
 
 	// outgoing connections still need to be established. pconn is nil.
 	for p.conn == nil {
