@@ -415,8 +415,8 @@ var _ = Describe("Route Filtering", func() {
 		mbClient1 := NewMetalBond(Config{}, client1)
 		mbClient2 := NewMetalBond(Config{}, client2)
 
-		Expect(mbClient1.AddPeer(serverAddress, "")).To(Succeed())
-		Expect(mbClient2.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbClient1.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
+		Expect(mbClient2.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
 
 		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))
 		Eventually(peerState(mbClient2, serverAddress)).Should(Equal(ESTABLISHED))
@@ -492,8 +492,8 @@ var _ = Describe("Route Filtering", func() {
 		mbClient1 := NewMetalBond(Config{}, client1)
 		mbClient2 := NewMetalBond(Config{}, client2)
 
-		Expect(mbClient1.AddPeer(serverAddress, "")).To(Succeed())
-		Expect(mbClient2.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbClient1.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
+		Expect(mbClient2.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
 
 		Eventually(peerState(mbClient1, serverAddress)).Should(Equal(ESTABLISHED))
 		Eventually(peerState(mbClient2, serverAddress)).Should(Equal(ESTABLISHED))
@@ -543,9 +543,9 @@ var _ = Describe("Route Filtering", func() {
 		mbBackend1 := NewMetalBond(Config{}, backend1Client)
 		mbBackend2 := NewMetalBond(Config{}, backend2Client)
 
-		Expect(mbLB.AddPeer(serverAddress, "")).To(Succeed())
-		Expect(mbBackend1.AddPeer(serverAddress, "")).To(Succeed())
-		Expect(mbBackend2.AddPeer(serverAddress, "")).To(Succeed())
+		Expect(mbLB.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
+		Expect(mbBackend1.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
+		Expect(mbBackend2.AddPeer(serverAddress, "", clientTxChanCapacity, clientRxChanEventCapacity, clientRxChanDataUpdateCapacity)).To(Succeed())
 
 		Eventually(peerState(mbLB, serverAddress)).Should(Equal(ESTABLISHED))
 		Eventually(peerState(mbBackend1, serverAddress)).Should(Equal(ESTABLISHED))
