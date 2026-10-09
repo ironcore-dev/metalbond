@@ -145,7 +145,7 @@ func (rt *routeTable) RemoveNextHop(vni VNI, dest Destination, nh NextHop, recei
 	return left, nil
 }
 
-func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) error {
+func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) (int, error) {
 	rt.rwmtx.Lock()
 	defer rt.rwmtx.Unlock()
 
@@ -163,12 +163,12 @@ func (rt *routeTable) AddNextHop(vni VNI, dest Destination, nh NextHop, received
 	}
 
 	if _, exists := rt.routes[vni][dest][nh][receivedFrom]; exists {
-		return fmt.Errorf("nexthop already exists")
+		return len(rt.routes[vni][dest][nh]), fmt.Errorf("nexthop already exists")
 	}
 
 	rt.routes[vni][dest][nh][receivedFrom] = true
 
-	return nil
+	return len(rt.routes[vni][dest][nh]), nil
 }
 
 func (rt *routeTable) NextHopExists(vni VNI, dest Destination, nh NextHop, receivedFrom *metalBondPeer) bool {
