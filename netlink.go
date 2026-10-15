@@ -169,6 +169,16 @@ func (c *NetlinkClient) Cleanup() error {
 func (c *NetlinkClient) replaceRoute(dst netip.Prefix, hops []NextHop, table int) error {
 	var nextHopInfos []*netlink.NexthopInfo
 	for _, hop := range hops {
+		// TODO: when installing routes with too many next hops netlink
+		// eventually fails to properly serialize route messages. As a result
+		// all sorts of things get wedged and investigating failures becomes
+		// impossible as the routes can no longer be retrieved due to issues
+		// with the route size. This is a temporary hack to fix the issue we
+		// have right now. The proper solution is to create next-hop groups
+		// independent of the routes and reference those in the route.
+		if len(nextHopInfos) >= 3 {
+			break
+		}
 		nextHopInfos = append(nextHopInfos, &netlink.NexthopInfo{
 			LinkIndex: c.tunDevice.Attrs().Index,
 			Encap: &netlink.IP6tnlEncap{
